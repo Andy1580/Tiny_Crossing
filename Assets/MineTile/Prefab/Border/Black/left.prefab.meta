@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 6b54553f6f166c643898f331b892bf61
+timeCreated: 1439124416
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Border/Black/left.prefab
+  uploadId: 76272

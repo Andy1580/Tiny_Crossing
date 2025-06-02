@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 528d759734e8de54b9e745f404326fe4
+timeCreated: 1439124473
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Border/Red/down.prefab
+  uploadId: 76272

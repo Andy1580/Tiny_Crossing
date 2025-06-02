@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e308824d4b24f6c48971db5731ab324f
+timeCreated: 1439124521
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Misc/bridge.prefab
+  uploadId: 76272

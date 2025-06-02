@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: fcfb4d90d38c3f3479b29c4cdc1812c6
+timeCreated: 1439131652
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Ground/Bottom/bottom left 2.prefab
+  uploadId: 76272

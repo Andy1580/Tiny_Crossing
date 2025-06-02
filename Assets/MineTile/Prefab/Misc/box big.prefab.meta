@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: de785b7e533810645a720a3c73e87386
+timeCreated: 1439124525
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Misc/box big.prefab
+  uploadId: 76272

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 9ec82eb20cc660043be910efe44f372c
+timeCreated: 1439131805
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Ground/Center/center 1.prefab
+  uploadId: 76272

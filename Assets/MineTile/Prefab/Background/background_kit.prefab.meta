@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1cd91428c07cc9846bd96322a6ebabbf
+timeCreated: 1439126101
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Background/background_kit.prefab
+  uploadId: 76272

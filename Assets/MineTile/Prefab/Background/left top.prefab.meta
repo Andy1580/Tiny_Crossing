@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c9aa91ba5dfb4a242aaed3582038471a
+timeCreated: 1439126107
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Background/left top.prefab
+  uploadId: 76272

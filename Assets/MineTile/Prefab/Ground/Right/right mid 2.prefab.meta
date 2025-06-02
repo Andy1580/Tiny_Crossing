@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 77b7545666064d04abaf6c843721b784
+timeCreated: 1439133474
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Ground/Right/right mid 2.prefab
+  uploadId: 76272

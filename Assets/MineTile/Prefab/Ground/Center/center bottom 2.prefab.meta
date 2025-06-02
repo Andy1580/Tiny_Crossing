@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d653e740d83110347aedddb6d0fa2be6
+timeCreated: 1439131793
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 43476
+  packageName: Mine Tile
+  packageVersion: 1.0
+  assetPath: Assets/MineTile/Prefab/Ground/Center/center bottom 2.prefab
+  uploadId: 76272
