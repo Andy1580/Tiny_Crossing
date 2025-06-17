@@ -4,7 +4,8 @@ public enum NodeType
 {
     Ground,     // Caminable
     Air,        // Espacio vacío
-    Blocked     // Obstáculo
+    Blocked,    // Obstáculo
+    Void        // Hueco letal
 }
 
 public class Node

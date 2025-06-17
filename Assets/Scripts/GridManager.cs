@@ -12,6 +12,7 @@ public class GridManager : MonoBehaviour
 
     [Header("Walkable Detection")]
     public LayerMask groundLayer;
+    public LayerMask voidLayer;
     public float detectionRadius = 0.45f;
 
     private Node[,] grid;
@@ -34,13 +35,19 @@ public class GridManager : MonoBehaviour
                 Vector3 worldPos = originPosition + new Vector3(x * cellSize, y * cellSize, 0f);
                 Vector2 checkBelow = new Vector2(worldPos.x, worldPos.y - (cellSize / 2f));
 
-                bool hasGroundBelow = Physics2D.OverlapCircle(checkBelow, detectionRadius, groundLayer);
+                bool isGround = Physics2D.OverlapCircle(checkBelow, detectionRadius, groundLayer);
+                bool isVoid = Physics2D.OverlapCircle(checkBelow, detectionRadius, voidLayer); // nuevo
 
-                NodeType nodeType = hasGroundBelow ? NodeType.Ground : NodeType.Air;
+                NodeType type = NodeType.Air;
 
-                grid[x, y] = new Node(new Vector2Int(x, y), worldPos, nodeType);
+                if (isVoid)
+                    type = NodeType.Void;
+                else if (isGround)
+                    type = NodeType.Ground;
 
-                //Debug.Log($"Node ({x},{y}) - Tipo: {nodeType}");
+                grid[x, y] = new Node(new Vector2Int(x, y), worldPos, type);
+
+                Debug.Log($"Node ({x},{y}) - Tipo: {type}");
             }
         }
     }
@@ -136,6 +143,9 @@ public class GridManager : MonoBehaviour
                         break;
                     case NodeType.Blocked:
                         Gizmos.color = Color.red;
+                        break;
+                    case NodeType.Void:
+                        Gizmos.color = Color.black; // Huecos letales
                         break;
                 }
 

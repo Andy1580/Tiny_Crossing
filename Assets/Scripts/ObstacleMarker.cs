@@ -6,33 +6,23 @@ using UnityEngine;
 public class ObstacleMarker : MonoBehaviour
 {
     private GridManager gridManager;
+    private Collider2D col;
+
+    private void Awake()
+    {
+        col = GetComponent<Collider2D>();
+    }
 
     private void Start()
     {
         gridManager = Object.FindFirstObjectByType<GridManager>();
     }
 
-    //private void Update()
-    //{
-    //    if (gridManager != null)
-    //    {
-    //        gridManager.SetNodesBlockedByCollider(GetComponent<Collider2D>(), true);
-    //    }
-    //}
-
-    private void OnTriggerEnter2D(Collider2D other)
+    private void Update()
     {
-        if (other.CompareTag("NodeDetector"))
+        if (gridManager != null)
         {
-            gridManager.SetNodesBlockedByCollider(GetComponent<Collider2D>(), true);
-        }
-    }
-
-    private void OnTriggerExit2D(Collider2D other)
-    {
-        if (other.CompareTag("NodeDetector"))
-        {
-            gridManager.SetNodesBlockedByCollider(GetComponent<Collider2D>(), false);
+            gridManager.SetNodesBlockedByCollider(col, true);
         }
     }
 }
