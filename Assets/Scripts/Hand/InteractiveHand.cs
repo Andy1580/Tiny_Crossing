@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class InteractiveHand : MonoBehaviour
@@ -16,6 +14,12 @@ public class InteractiveHand : MonoBehaviour
     [SerializeField] private LayerMask interactableLayer;
     [SerializeField] private LayerMask groundLayer;
 
+    [Header("Tiny Reference")]
+    [SerializeField] private TinyController tiny;
+
+    private Vector3 handOffsetFromTiny;
+    private bool isAttachedToTiny = false;
+
     private Camera mainCamera;
     private GameObject grabbedObject;
     private Vector2 objectGrabOffset;
@@ -25,7 +29,6 @@ public class InteractiveHand : MonoBehaviour
     void Start()
     {
         mainCamera = Camera.main;
-        // Asegurar que la mano está en Z=0 (mismo que la cámara)
         transform.position = new Vector3(transform.position.x, transform.position.y, 0);
     }
 
@@ -35,31 +38,28 @@ public class InteractiveHand : MonoBehaviour
         HandleInteraction();
         UpdateTimers();
         ConstrainToViewport();
+        HandleTinyAttachment();
     }
 
     void HandleMovement()
     {
-        // Movimiento constante con el ratón sin necesidad de click
         Vector3 mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-        mousePos.z = 0; // Importante: mantener Z=0
+        mousePos.z = 0;
         transform.position = Vector3.Lerp(transform.position, mousePos, moveSpeed * Time.deltaTime);
     }
 
     void HandleInteraction()
     {
-        // Iniciar agarre al presionar el botón del ratón
         if (Input.GetMouseButtonDown(0))
         {
             TryGrabObject();
         }
 
-        // Soltar objeto al levantar el botón del ratón
         if (Input.GetMouseButtonUp(0) && grabbedObject != null)
         {
             ReleaseObject();
         }
 
-        // Mover objeto agarrado
         if (grabbedObject != null)
         {
             grabbedObject.transform.position = (Vector2)transform.position + objectGrabOffset;
@@ -81,7 +81,6 @@ public class InteractiveHand : MonoBehaviour
                     grabbedObject = hit.gameObject;
                     objectGrabOffset = (Vector2)grabbedObject.transform.position - (Vector2)transform.position;
 
-                    // Configurar según tipo
                     switch (interactable.interactableType)
                     {
                         case Interactable.InteractableType.Obstacle:
@@ -93,14 +92,14 @@ public class InteractiveHand : MonoBehaviour
                         case Interactable.InteractableType.Weapon:
                             currentHoldTimer = weaponHoldTime;
                             isHoldingObject = true;
+                            interactable.isHoldingByHand = true;
                             break;
 
                         case Interactable.InteractableType.InventoryItem:
                             interactable.AddToInventory();
-                            grabbedObject = null; // No mantenemos agarrado
+                            grabbedObject = null;
                             break;
                     }
-
                     break;
                 }
             }
@@ -112,10 +111,17 @@ public class InteractiveHand : MonoBehaviour
         if (grabbedObject == null) return;
 
         Interactable interactable = grabbedObject.GetComponent<Interactable>();
-        if (interactable.interactableType == Interactable.InteractableType.Obstacle)
+        if (interactable != null)
         {
-            interactable.EnablePhysics();
-            interactable.MarkAsUsed();
+            if (interactable.interactableType == Interactable.InteractableType.Obstacle)
+            {
+                interactable.EnablePhysics();
+                interactable.MarkAsUsed();
+            }
+            else if (interactable.interactableType == Interactable.InteractableType.Weapon)
+            {
+                interactable.isHoldingByHand = false;
+            }
         }
 
         grabbedObject = null;
@@ -134,7 +140,6 @@ public class InteractiveHand : MonoBehaviour
 
             if (interactable.interactableType == Interactable.InteractableType.Obstacle)
             {
-                // SOLO activamos física sin reposicionar
                 interactable.EnablePhysics();
                 interactable.MarkAsUsed();
             }
@@ -154,6 +159,25 @@ public class InteractiveHand : MonoBehaviour
         viewportPos.x = Mathf.Clamp(viewportPos.x, 0.05f, 0.95f);
         viewportPos.y = Mathf.Clamp(viewportPos.y, 0.05f, 0.95f);
         transform.position = mainCamera.ViewportToWorldPoint(viewportPos);
+    }
+
+    public void HandleWeaponHitTiny(Interactable weapon, Vector3 hitPoint)
+    {
+        grabbedObject = null;
+        isHoldingObject = false;
+
+        handOffsetFromTiny = transform.position - hitPoint;
+        isAttachedToTiny = true;
+
+        weapon.isHoldingByHand = false;
+    }
+
+    void HandleTinyAttachment()
+    {
+        if (isAttachedToTiny && tiny != null)
+        {
+            transform.position = tiny.transform.position + handOffsetFromTiny;
+        }
     }
 
     void OnDrawGizmosSelected()

@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class Interactable : MonoBehaviour
@@ -14,10 +12,54 @@ public class Interactable : MonoBehaviour
     private Collider2D col;
     public bool CanInteract { get; private set; } = true;
 
+    [Header("Weapon Settings")]
+    public bool isHoldingByHand = false;
+    public bool isAttachedToTiny = false;
+    public Transform tinyWeaponAnchor;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         col = GetComponent<Collider2D>();
+    }
+
+    void Update()
+    {
+        if (isAttachedToTiny && tinyWeaponAnchor != null)
+        {
+            transform.position = tinyWeaponAnchor.position;
+            transform.rotation = tinyWeaponAnchor.rotation;
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (interactableType != InteractableType.Weapon) return;
+        if (!isHoldingByHand) return;
+
+        TinyController tiny = other.GetComponent<TinyController>();
+        if (tiny != null && tiny.weaponAnchorPoint != null)
+        {
+            AttachToTiny(tiny.weaponAnchorPoint);
+
+            //InteractiveHand hand = FindObjectOfType<InteractiveHand>();
+            InteractiveHand hand = Object.FindFirstObjectByType<InteractiveHand>();
+            if (hand != null)
+            {
+                hand.HandleWeaponHitTiny(this, other.ClosestPoint(transform.position));
+            }
+        }
+    }
+
+    public void AttachToTiny(Transform anchorPoint)
+    {
+        isAttachedToTiny = true;
+        tinyWeaponAnchor = anchorPoint;
+
+        if (rb != null)
+        {
+            rb.simulated = false;
+        }
     }
 
     public void DisablePhysics()
@@ -45,7 +87,6 @@ public class Interactable : MonoBehaviour
 
     public void AddToInventory()
     {
-        // Lógica para agregar al inventario
         gameObject.SetActive(false);
         MarkAsUsed();
     }
