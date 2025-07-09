@@ -5,6 +5,10 @@ public class Interactable : MonoBehaviour
     public enum InteractableType { Obstacle, Weapon, InventoryItem }
     public InteractableType interactableType;
 
+    // Nuevo enum para tipos de armas
+    public enum WeaponType { None, FlySwatter, Bat, Wrench }
+    public WeaponType weaponType = WeaponType.None;
+
     [Header("Physics Settings")]
     public bool useGravity = true;
 

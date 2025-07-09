@@ -17,6 +17,9 @@ public class InteractiveHand : MonoBehaviour
     [Header("Tiny Reference")]
     [SerializeField] private TinyController tiny;
 
+    [Header("Power Bar")]
+    public PowerBarController powerBar;
+
     private Vector3 handOffsetFromTiny;
     private bool isAttachedToTiny = false;
 
@@ -34,7 +37,11 @@ public class InteractiveHand : MonoBehaviour
 
     void Update()
     {
-        HandleMovement();
+        if (!isAttachedToTiny)
+        {
+            HandleMovement();
+        }
+
         HandleInteraction();
         UpdateTimers();
         ConstrainToViewport();
@@ -170,6 +177,13 @@ public class InteractiveHand : MonoBehaviour
         isAttachedToTiny = true;
 
         weapon.isHoldingByHand = false;
+
+        // Iniciar barra de poder usando el tipo de arma del Interactable
+        powerBar.StartPowerBar(weapon.weaponType, (powerValue) =>
+        {
+            ApplyWeaponEffect(weapon, powerValue);
+            powerBar.Hide();
+        });
     }
 
     void HandleTinyAttachment()
@@ -178,6 +192,29 @@ public class InteractiveHand : MonoBehaviour
         {
             transform.position = tiny.transform.position + handOffsetFromTiny;
         }
+    }
+
+    void ApplyWeaponEffect(Interactable weapon, float powerValue)
+    {
+        TinyController tinyController = tiny.GetComponent<TinyController>();
+        if (tinyController == null) return;
+
+        switch (weapon.weaponType)
+        {
+            case Interactable.WeaponType.FlySwatter:
+                tinyController.ApplyFlySwatterEffect(powerValue);
+                break;
+            case Interactable.WeaponType.Bat:
+                tinyController.ApplyBatEffect(powerValue);
+                break;
+            case Interactable.WeaponType.Wrench:
+                tinyController.ApplyWrenchEffect(powerValue);
+                break;
+        }
+
+        // Restaurar control de mano
+        isAttachedToTiny = false;
+        Destroy(weapon.gameObject);
     }
 
     void OnDrawGizmosSelected()
