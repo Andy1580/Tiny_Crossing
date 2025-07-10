@@ -21,6 +21,10 @@ public class Interactable : MonoBehaviour
     public bool isAttachedToTiny = false;
     public Transform tinyWeaponAnchor;
 
+    // Agregar esta propiedad
+    [Header("Inventory Settings")]
+    public InventoryItem inventoryItem;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
@@ -91,6 +95,11 @@ public class Interactable : MonoBehaviour
 
     public void AddToInventory()
     {
+        if (inventoryItem != null)
+        {
+            // Solo verificar si el inventario está lleno, no si el ítem ya existe
+            InventorySystem.Instance.AddItem(inventoryItem);
+        }
         gameObject.SetActive(false);
         MarkAsUsed();
     }

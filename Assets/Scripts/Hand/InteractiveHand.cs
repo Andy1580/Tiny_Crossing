@@ -57,11 +57,13 @@ public class InteractiveHand : MonoBehaviour
 
     void HandleInteraction()
     {
-        if (Input.GetMouseButtonDown(0))
+        // Solo procesar clic si no estamos sosteniendo un objeto
+        if (Input.GetMouseButtonDown(0) && grabbedObject == null)
         {
             TryGrabObject();
         }
 
+        // Soltar objeto solo si estamos sosteniendo algo
         if (Input.GetMouseButtonUp(0) && grabbedObject != null)
         {
             ReleaseObject();
@@ -76,39 +78,38 @@ public class InteractiveHand : MonoBehaviour
     void TryGrabObject()
     {
         Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, grabRadius, interactableLayer);
+        if (hits.Length == 0) return;
 
-        if (hits.Length > 0)
+        // Tomar solo el primer hit
+        Collider2D hit = hits[0];
+        Interactable interactable = hit.GetComponent<Interactable>();
+
+        if (interactable != null && interactable.CanInteract)
         {
-            foreach (Collider2D hit in hits)
+            grabbedObject = hit.gameObject;
+            objectGrabOffset = (Vector2)grabbedObject.transform.position - (Vector2)transform.position;
+
+            switch (interactable.interactableType)
             {
-                Interactable interactable = hit.GetComponent<Interactable>();
-
-                if (interactable != null && interactable.CanInteract)
-                {
-                    grabbedObject = hit.gameObject;
-                    objectGrabOffset = (Vector2)grabbedObject.transform.position - (Vector2)transform.position;
-
-                    switch (interactable.interactableType)
+                case Interactable.InteractableType.InventoryItem:
+                    if (interactable.inventoryItem != null)
                     {
-                        case Interactable.InteractableType.Obstacle:
-                            currentHoldTimer = obstacleHoldTime;
-                            isHoldingObject = true;
-                            interactable.DisablePhysics();
-                            break;
-
-                        case Interactable.InteractableType.Weapon:
-                            currentHoldTimer = weaponHoldTime;
-                            isHoldingObject = true;
-                            interactable.isHoldingByHand = true;
-                            break;
-
-                        case Interactable.InteractableType.InventoryItem:
-                            interactable.AddToInventory();
-                            grabbedObject = null;
-                            break;
+                        // Solo intentar agregar al inventario (el sistema manejará el límite)
+                        interactable.AddToInventory();
+                        grabbedObject = null;
                     }
                     break;
-                }
+                case Interactable.InteractableType.Obstacle:
+                    currentHoldTimer = obstacleHoldTime;
+                    isHoldingObject = true;
+                    interactable.DisablePhysics();
+                    break;
+
+                case Interactable.InteractableType.Weapon:
+                    currentHoldTimer = weaponHoldTime;
+                    isHoldingObject = true;
+                    interactable.isHoldingByHand = true;
+                    break;
             }
         }
     }
