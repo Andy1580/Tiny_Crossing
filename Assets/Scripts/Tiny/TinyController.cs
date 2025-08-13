@@ -26,6 +26,17 @@ public class TinyController : MonoBehaviour
     [SerializeField] private LayerMask gapTriggerLayer;
     private bool shouldJumpGap = false;
 
+    [Header("Obstacle Detection")]
+    [SerializeField] private float obstacleDetectionRange = 1.5f;
+    [SerializeField] private Vector2 obstacleOverlapSize = new Vector2(0.8f, 0.8f);
+    [SerializeField] private LayerMask interactableLayer; // Asigna la layer "Interactable" en el Inspector
+    private bool isObstacleBlocking = false;
+
+    [Header("Obstacle Reaction")]
+    [SerializeField] private float obstacleStopTime = 2f; // Tiempo que espera tras chocar
+    private float obstacleStopTimer = 0f;
+    private bool isWaitingAfterObstacle = false;
+
     [Header("Visual Settings")]
     [SerializeField] private Transform spriteTransform;
     [SerializeField] private float rotationSpeed = 10f;
@@ -48,6 +59,7 @@ public class TinyController : MonoBehaviour
     private const float stuckThreshold = 0.05f;
     private Vector2 lastPosition;
 
+    #region CORE
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
@@ -65,14 +77,29 @@ public class TinyController : MonoBehaviour
 
         CheckGrounded();
         DetectGaps();
+        DetectObstacles();
 
         if (!isStunned)
         {
-            HandleMovement();
-            HandleSpriteRotation();
-            HandleGapJump();
+            if (isWaitingAfterObstacle)
+            {
+                obstacleStopTimer -= Time.deltaTime;
+                if (obstacleStopTimer <= 0f)
+                {
+                    isWaitingAfterObstacle = false;
+                    ToggleDirection();
+                }
+            }
+            else
+            {
+                HandleMovement();
+            }
         }
+
+        HandleSpriteRotation();
+        HandleGapJump();
     }
+    #endregion CORE
 
     #region JUMP
     private void DetectGaps()
@@ -197,6 +224,15 @@ public class TinyController : MonoBehaviour
         Debug.Log($"Dirección cambiada a: {(isFacingRight ? "Derecha" : "Izquierda")}");
     }
 
+    // Método auxiliar para actualizar rotación
+    void UpdateSpriteRotation()
+    {
+        if (spriteTransform == null) return;
+
+        float targetRotation = (isReversed ^ !isFacingRight) ? 180f : 0f;
+        spriteTransform.rotation = Quaternion.Euler(0, targetRotation, 0);
+    }
+
     void CheckStuckLogic()
     {
         stuckTimer += Time.deltaTime;
@@ -217,6 +253,53 @@ public class TinyController : MonoBehaviour
     }
     #endregion MOVEMENT
 
+    #region OBSTACLE DETECTION
+    private void DetectObstacles()
+    {
+        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
+        Vector2 origin = (Vector2)transform.position + direction * 0.5f;
+
+        // 1. OverlapBox en la layer "Interactable"
+        Collider2D[] hits = Physics2D.OverlapBoxAll(
+            origin + direction * (obstacleDetectionRange * 0.5f),
+            obstacleOverlapSize,
+            0f,
+            interactableLayer
+        );
+
+        bool obstacleFound = false;
+        foreach (Collider2D hit in hits)
+        {
+            if (hit.isTrigger) continue; // Ignorar triggers
+
+            Interactable interactable = hit.GetComponent<Interactable>();
+            if (interactable != null && interactable.interactableType == Interactable.InteractableType.Obstacle)
+            {
+                obstacleFound = true;
+                break;
+            }
+        }
+
+        // 2. Lógica de reacción (igual que antes)
+        if (obstacleFound && !isWaitingAfterObstacle)
+        {
+            isObstacleBlocking = true;
+            isWaitingAfterObstacle = true;
+            obstacleStopTimer = obstacleStopTime;
+            rb.velocity = Vector2.zero;
+            Debug.Log("Obstáculo detectado (sin empujar)");
+        }
+        else if (!obstacleFound)
+        {
+            isObstacleBlocking = false;
+        }
+
+        // Debug visual
+        Debug.DrawLine(origin, origin + direction * obstacleDetectionRange, obstacleFound ? Color.red : Color.green);
+    }
+    #endregion OBSTACLE DETECTION
+
+    #region WEAPON EFFECTS
     // ===== EFECTOS DE ARMAS (MANTENIDOS CON DEBUGS) =====
     private float GetEffectDuration(float power)
     {
@@ -281,6 +364,7 @@ public class TinyController : MonoBehaviour
         Debug.Log("Tiny ya no está aturdido");
         isStunned = false;
     }
+    #endregion WEAPON EFFECTS
 
     void Die()
     {
@@ -289,12 +373,5 @@ public class TinyController : MonoBehaviour
         // Aquí tu lógica para reiniciar nivel o mostrar Game Over
     }
 
-    // Método auxiliar para actualizar rotación
-    void UpdateSpriteRotation()
-    {
-        if (spriteTransform == null) return;
-
-        float targetRotation = (isReversed ^ !isFacingRight) ? 180f : 0f;
-        spriteTransform.rotation = Quaternion.Euler(0, targetRotation, 0);
-    }
+    
 }
