@@ -37,6 +37,10 @@ public class TinyController : MonoBehaviour
     private float obstacleStopTimer = 0f;
     private bool isWaitingAfterObstacle = false;
 
+    [Header("Mid Obstacle Jump")]
+    [SerializeField] private float midObstacleJumpForce = 6f;
+    [SerializeField] private float midObstacleCheckHeight = 0.5f;
+
     [Header("Visual Settings")]
     [SerializeField] private Transform spriteTransform;
     [SerializeField] private float rotationSpeed = 10f;
@@ -146,12 +150,13 @@ public class TinyController : MonoBehaviour
         Debug.DrawRay(boxCenter, Vector2.down * 0.1f, isGrounded ? Color.green : Color.red);
     }
 
-    public void TryJump()
+    public void TryJump(float customForce = 0f)
     {
         if (isGrounded)
         {
-            rb.velocity = new Vector2(rb.velocity.x, 0); // Resetear velocidad Y
-            rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+            float force = customForce > 0 ? customForce : jumpForce;
+            rb.velocity = new Vector2(rb.velocity.x, 0);
+            rb.AddForce(Vector2.up * force, ForceMode2D.Impulse);
             Debug.Log("Tiny saltó! Fuerza: " + jumpForce);
         }
         else
@@ -270,13 +275,22 @@ public class TinyController : MonoBehaviour
         bool obstacleFound = false;
         foreach (Collider2D hit in hits)
         {
-            if (hit.isTrigger) continue; // Ignorar triggers
+            if (hit.isTrigger) continue;
 
             Interactable interactable = hit.GetComponent<Interactable>();
-            if (interactable != null && interactable.interactableType == Interactable.InteractableType.Obstacle)
+            if (interactable == null) continue;
+
+            // ------- Reacción a Obstáculos Normales -------
+            if (interactable.interactableType == Interactable.InteractableType.Obstacle)
             {
                 obstacleFound = true;
                 break;
+            }
+            // ------- Reacción a MidObstacle (salto) -------
+            else if (interactable.interactableType == Interactable.InteractableType.MidObstacle && isGrounded)
+            {
+                TryJump(midObstacleJumpForce); // Salto con fuerza ajustada
+                Debug.Log("¡Saltando MidObstacle!");
             }
         }
 

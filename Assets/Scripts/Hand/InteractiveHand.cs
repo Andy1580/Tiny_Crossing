@@ -104,7 +104,11 @@ public class InteractiveHand : MonoBehaviour
                     isHoldingObject = true;
                     interactable.DisablePhysics();
                     break;
-
+                case Interactable.InteractableType.MidObstacle:
+                    currentHoldTimer = obstacleHoldTime;
+                    isHoldingObject = true;
+                    interactable.DisablePhysics();
+                    break;
                 case Interactable.InteractableType.Weapon:
                     currentHoldTimer = weaponHoldTime;
                     isHoldingObject = true;
@@ -122,6 +126,11 @@ public class InteractiveHand : MonoBehaviour
         if (interactable != null)
         {
             if (interactable.interactableType == Interactable.InteractableType.Obstacle)
+            {
+                interactable.EnablePhysics();
+                interactable.MarkAsUsed();
+            }
+            else if (interactable.interactableType == Interactable.InteractableType.MidObstacle)
             {
                 interactable.EnablePhysics();
                 interactable.MarkAsUsed();
@@ -147,6 +156,11 @@ public class InteractiveHand : MonoBehaviour
             Interactable interactable = grabbedObject.GetComponent<Interactable>();
 
             if (interactable.interactableType == Interactable.InteractableType.Obstacle)
+            {
+                interactable.EnablePhysics();
+                interactable.MarkAsUsed();
+            }
+            else if (interactable.interactableType == Interactable.InteractableType.MidObstacle)
             {
                 interactable.EnablePhysics();
                 interactable.MarkAsUsed();

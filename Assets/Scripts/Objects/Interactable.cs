@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class Interactable : MonoBehaviour
 {
-    public enum InteractableType { Obstacle, Weapon, InventoryItem }
+    public enum InteractableType { Obstacle, MidObstacle, Weapon, InventoryItem }
     public InteractableType interactableType;
 
     // Nuevo enum para tipos de armas
