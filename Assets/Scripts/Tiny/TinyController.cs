@@ -1,41 +1,204 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class TinyController : MonoBehaviour
 {
     [Header("Weapon Position Reference")]
     public Transform weaponAnchorPoint;
 
-    //[Header("Collider Settings")]
-    //public Collider2D bodyCollider; // Collider para detectar armas
-
     [Header("Movement Settings")]
     public float normalSpeed = 3f;
     public float slowSpeed = 1f;
     public float stunDuration = 2f;
+    public enum StartingDirection { Right, Left }
+    [Tooltip("Dirección inicial de movimiento")]
+    public StartingDirection startDirection = StartingDirection.Right;
 
+    [Header("Jump Settings")]
+    [SerializeField] private float jumpForce = 8f;
+    [SerializeField] private float groundCheckDistance = 0.2f;
+    [SerializeField] private LayerMask groundLayer;
+    [SerializeField] private bool enableTestJump = true;
+
+    [Header("Visual Settings")]
+    [SerializeField] private Transform spriteTransform;
+    [SerializeField] private float rotationSpeed = 10f;
+
+    [Header("Debug Controls")]
+    [Tooltip("Click para cambiar dirección en Play Mode")]
+    [SerializeField] private bool _changeDirection;
+
+    public bool isGrounded;
     private float currentSpeed;
     private bool isStunned = false;
-    private bool isReversed = false;
+    private bool isReversed;
     private bool isAlive = true;
+    private Vector2 currentDirection;
+    private bool isFacingRight = true;
+    private Rigidbody2D rb;
+
+    private float stuckTimer = 0f;
+    private const float stuckCheckInterval = 0.3f;
+    private const float stuckThreshold = 0.05f;
+    private Vector2 lastPosition;
 
     void Start()
     {
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 3f; // Valor del código antiguo
+        rb.freezeRotation = true;
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
+        if (enableTestJump)
+        {
+            StartCoroutine(TestJumpRoutine());
+        }
+
         currentSpeed = normalSpeed;
+        InitializeDirection();
     }
 
     void Update()
     {
         if (!isAlive) return;
 
-        // Movimiento básico de Tiny
+        CheckGrounded();
+
         if (!isStunned)
         {
-            float move = currentSpeed * Time.deltaTime;
-            if (isReversed) move *= -1;
-            transform.Translate(move, 0, 0);
+            HandleMovement();
+            HandleSpriteRotation();
         }
     }
 
+    #region JUMP
+    IEnumerator TestJumpRoutine()
+    {
+        Debug.Log("Iniciando prueba de salto automático...");
+        yield return new WaitForSeconds(1f);
+
+        while (enableTestJump)
+        {
+            if (isGrounded)
+            {
+                TryJump();
+                Debug.Log("Salto de prueba ejecutado");
+            }
+            yield return new WaitForSeconds(1f);
+        }
+    }
+
+    void CheckGrounded()
+    {
+        Vector2 boxSize = new Vector2(0.8f, 0.1f);
+        Vector2 boxCenter = (Vector2)transform.position + Vector2.down * 0.6f;
+
+        isGrounded = Physics2D.BoxCast(boxCenter, boxSize, 0f, Vector2.down, 0.1f, groundLayer);
+
+        // Debug visual
+        Debug.DrawRay(boxCenter, Vector2.down * 0.1f, isGrounded ? Color.green : Color.red);
+    }
+
+    public void TryJump()
+    {
+        if (isGrounded)
+        {
+            rb.velocity = new Vector2(rb.velocity.x, 0); // Resetear velocidad Y
+            rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+            Debug.Log("Tiny saltó! Fuerza: " + jumpForce);
+        }
+        else
+        {
+            Debug.Log("Tiny no puede saltar: No está en el suelo");
+        }
+    }
+    #endregion JUMP
+
+    #region MOVEMENT
+    void InitializeDirection()
+    {
+        currentDirection = startDirection == StartingDirection.Right ? Vector2.right : Vector2.left;
+        isFacingRight = startDirection == StartingDirection.Right;
+        UpdateSpriteRotation();
+    }
+
+
+    void HandleMovement()
+    {
+        if (!isGrounded) return;
+
+        float effectiveDirection = isReversed ? -currentDirection.x : currentDirection.x;
+
+        // Usar velocidad física en lugar de Translate
+        rb.velocity = new Vector2(effectiveDirection * currentSpeed, rb.velocity.y);
+
+        // Sistema anti-atascos del código antiguo
+        CheckStuckLogic();
+
+        Debug.DrawRay(transform.position, currentDirection * 0.5f, Color.red); // Debug: dirección actual
+    }
+
+    void HandleSpriteRotation()
+    {
+        float targetRotation = 0f;
+
+        if (isReversed)
+        {
+            targetRotation = currentDirection.x > 0 ? 180f : 0f;
+        }
+        else
+        {
+            targetRotation = currentDirection.x > 0 ? 0f : 180f;
+        }
+
+        Quaternion newRotation = Quaternion.Euler(0, targetRotation, 0);
+        spriteTransform.rotation = Quaternion.Lerp(
+            spriteTransform.rotation,
+            newRotation,
+            rotationSpeed * Time.deltaTime
+        );
+    }
+
+    private void OnValidate()
+    {
+        if (Application.isPlaying && _changeDirection)
+        {
+            _changeDirection = false;
+            ToggleDirection();
+        }
+    }
+
+    // Método público para pruebas (puedes llamarlo desde otros scripts o eventos de Unity)
+    public void ToggleDirection()
+    {
+        currentDirection *= -1;
+        isFacingRight = !isFacingRight;
+        UpdateSpriteRotation();
+        Debug.Log($"Dirección cambiada a: {(isFacingRight ? "Derecha" : "Izquierda")}");
+    }
+
+    void CheckStuckLogic()
+    {
+        stuckTimer += Time.deltaTime;
+
+        if (stuckTimer >= stuckCheckInterval)
+        {
+            float moved = Vector2.Distance(transform.position, lastPosition);
+
+            if (moved < stuckThreshold && isGrounded)
+            {
+                Debug.Log("Tiny atascado. Aplicando mini-salto.");
+                rb.velocity = new Vector2(rb.velocity.x, jumpForce * 0.3f);
+            }
+
+            lastPosition = transform.position;
+            stuckTimer = 0f;
+        }
+    }
+    #endregion MOVEMENT
+
+    // ===== EFECTOS DE ARMAS (MANTENIDOS CON DEBUGS) =====
     private float GetEffectDuration(float power)
     {
         if (power < 0.4f) return 1f;       // Rango bajo
@@ -43,40 +206,43 @@ public class TinyController : MonoBehaviour
         return 4f;                         // Rango alto
     }
 
-    // ===== EFECTOS DE ARMAS =====
     public void ApplyFlySwatterEffect(float power)
     {
-        Debug.Log($"FlySwatter aplicado! Poder: {power}");
+        Debug.Log($"FlySwatter aplicado! Poder: {power}. Inversión de dirección.");
         isReversed = true;
 
-        // Duración basada en rango de poder
         float effectDuration = GetEffectDuration(power);
         Invoke("ResetDirection", effectDuration);
     }
 
     public void ApplyBatEffect(float power)
     {
-        Debug.Log($"Bat aplicado! Poder: {power}");
+        Debug.Log($"Bat aplicado! Poder: {power}. Reducción de velocidad.");
         currentSpeed = Mathf.Lerp(normalSpeed, slowSpeed, power);
 
         float effectDuration = GetEffectDuration(power);
         Invoke("ResetSpeed", effectDuration);
 
-        // Muerte solo en rango alto (0.8-1)
-        if (power >= 0.8f) Die();
+        if (power >= 0.8f)
+        {
+            Debug.Log("Golpe crítico con bate!");
+            Die();
+        }
     }
 
     public void ApplyWrenchEffect(float power)
     {
-        Debug.Log($"Wrench aplicado! Poder: {power}");
+        Debug.Log($"Wrench aplicado! Poder: {power}. Aturdimiento.");
         isStunned = true;
 
-        // Duración basada en rango de poder
         float effectDuration = GetEffectDuration(power);
         Invoke("EndStun", effectDuration);
 
-        // Muerte solo en rango alto (0.8-1)
-        if (power >= 0.8f) Die();
+        if (power >= 0.8f)
+        {
+            Debug.Log("Golpe crítico con llave inglesa!");
+            Die();
+        }
     }
 
     void ResetDirection()
@@ -87,7 +253,7 @@ public class TinyController : MonoBehaviour
 
     void ResetSpeed()
     {
-        Debug.Log("Velocidad de Tiny restaurada");
+        Debug.Log("Velocidad de Tiny restaurada a " + normalSpeed);
         currentSpeed = normalSpeed;
     }
 
@@ -102,5 +268,14 @@ public class TinyController : MonoBehaviour
         Debug.Log("Tiny ha muerto!");
         isAlive = false;
         // Aquí tu lógica para reiniciar nivel o mostrar Game Over
+    }
+
+    // Método auxiliar para actualizar rotación
+    void UpdateSpriteRotation()
+    {
+        if (spriteTransform == null) return;
+
+        float targetRotation = (isReversed ^ !isFacingRight) ? 180f : 0f;
+        spriteTransform.rotation = Quaternion.Euler(0, targetRotation, 0);
     }
 }
