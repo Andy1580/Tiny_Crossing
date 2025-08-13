@@ -19,7 +19,12 @@ public class TinyController : MonoBehaviour
     [SerializeField] private float jumpForce = 8f;
     [SerializeField] private float groundCheckDistance = 0.2f;
     [SerializeField] private LayerMask groundLayer;
-    [SerializeField] private bool enableTestJump = true;
+
+    [Header("Gap Detection")]
+    [SerializeField] private float gapDetectionDistance = 1.5f;
+    [SerializeField] private Vector2 gapCheckSize = new Vector2(0.8f, 0.1f);
+    [SerializeField] private LayerMask gapTriggerLayer;
+    private bool shouldJumpGap = false;
 
     [Header("Visual Settings")]
     [SerializeField] private Transform spriteTransform;
@@ -50,11 +55,6 @@ public class TinyController : MonoBehaviour
         rb.freezeRotation = true;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-        if (enableTestJump)
-        {
-            StartCoroutine(TestJumpRoutine());
-        }
-
         currentSpeed = normalSpeed;
         InitializeDirection();
     }
@@ -64,28 +64,47 @@ public class TinyController : MonoBehaviour
         if (!isAlive) return;
 
         CheckGrounded();
+        DetectGaps();
 
         if (!isStunned)
         {
             HandleMovement();
             HandleSpriteRotation();
+            HandleGapJump();
         }
     }
 
     #region JUMP
-    IEnumerator TestJumpRoutine()
+    private void DetectGaps()
     {
-        Debug.Log("Iniciando prueba de salto automático...");
-        yield return new WaitForSeconds(1f);
+        if (!isGrounded) return;
 
-        while (enableTestJump)
+        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
+        Vector2 origin = (Vector2)transform.position + direction * 0.5f;
+
+        // Detección con BoxCast (preciso para huecos)
+        RaycastHit2D hit = Physics2D.BoxCast(
+            origin,
+            gapCheckSize,
+            0f,
+            direction,
+            gapDetectionDistance,
+            gapTriggerLayer
+        );
+
+        shouldJumpGap = hit.collider != null && hit.collider.CompareTag("GapTrigger");
+
+        // Debug visual
+        Debug.DrawRay(origin, direction * gapDetectionDistance, shouldJumpGap ? Color.yellow : Color.white);
+    }
+
+    private void HandleGapJump()
+    {
+        if (shouldJumpGap && isGrounded)
         {
-            if (isGrounded)
-            {
-                TryJump();
-                Debug.Log("Salto de prueba ejecutado");
-            }
-            yield return new WaitForSeconds(1f);
+            TryJump();
+            shouldJumpGap = false;
+            Debug.Log("¡Saltando hueco detectado!");
         }
     }
 
