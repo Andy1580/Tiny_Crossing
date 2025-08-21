@@ -2153,7 +2153,7 @@ GameObject:
   m_Component:
   - component: {fileID: 790953419}
   - component: {fileID: 790953420}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Goal Point
   m_TagString: Goal
   m_Icon: {fileID: -5442936267250999957, guid: 0000000000000000d000000000000000, type: 0}
@@ -2953,7 +2953,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!61 &1163464349
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -6299,6 +6299,15 @@ MonoBehaviour:
   obstacleStopTime: 2
   midObstacleJumpForce: 10
   midObstacleCheckHeight: 1
+  goalReachedDistance: 0.5
+  goalSlowDownDistance: 2
+  goal: {fileID: 790953419}
+  lookAheadDistance: 10
+  minGapWidth: 0.5
+  platformSequenceLookAhead: 8
+  minHeightToJump: 2
+  maxJumpHeight: 6
+  platformForwardOffset: 2
   spriteTransform: {fileID: 503190564}
   rotationSpeed: 10
   _changeDirection: 0
@@ -6441,7 +6450,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1656084553}
   - component: {fileID: 1656084554}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Sprite
   m_TagString: Untagged
   m_Icon: {fileID: 0}

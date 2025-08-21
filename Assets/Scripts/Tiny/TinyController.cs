@@ -1,6 +1,6 @@
-using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 public class TinyController : MonoBehaviour
 {
@@ -41,6 +41,28 @@ public class TinyController : MonoBehaviour
     [SerializeField] private float midObstacleJumpForce = 6f;
     [SerializeField] private float midObstacleCheckHeight = 0.5f;
 
+    [Header("Goal Settings")]
+    [SerializeField] private float goalReachedDistance = 0.5f; // Distancia para considerar que llegó
+    [SerializeField] private float goalSlowDownDistance = 2f; // Distancia para comenzar a frenar
+    [SerializeField] private Transform goal;
+    private bool hasReachedGoal = false;
+
+    [Header("Platform Planning")]
+    [SerializeField] private float lookAheadDistance = 10f; // Rango para escanear plataformas
+    private bool goalIsElevated = false;
+    private List<Vector2> platformPositions = new List<Vector2>();
+
+    [Header("Multi-Platform Jump")]
+    [SerializeField] private float minGapWidth = 0.5f; // Ancho mínimo de hueco para evitar caída
+    [SerializeField] private float platformSequenceLookAhead = 8f; // Rango extendido para planificación
+    [SerializeField] private float minHeightToJump = 2f; // Altura mínima para considerar salto
+    [SerializeField] private float maxJumpHeight = 4f; // Máximo que Tiny puede saltar
+    [SerializeField] private float platformForwardOffset = 2f; // Margen para saltar ANTES de la plataforma
+    private bool isOnPlatformSequence = false;
+    private Vector2? nextPlatformTarget = null;
+    private bool shouldJumpToPlatform = false;
+    private float initialGroundHeight;
+
     [Header("Visual Settings")]
     [SerializeField] private Transform spriteTransform;
     [SerializeField] private float rotationSpeed = 10f;
@@ -72,20 +94,36 @@ public class TinyController : MonoBehaviour
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
         currentSpeed = normalSpeed;
+        initialGroundHeight = transform.position.y;
         InitializeDirection();
     }
 
     void Update()
     {
-        if (!isAlive) return;
+        if (!isAlive || hasReachedGoal) return; // No hacer nada si llegó a la meta
 
         CheckGrounded();
+        ScanForPlatforms();
+        CheckGoalProximity(); // Escaneo temprano cada frame
+        if (isOnPlatformSequence && nextPlatformTarget.HasValue)
+        {
+            Debug.DrawLine(transform.position, nextPlatformTarget.Value, Color.magenta);
+            Debug.Log("Secuencia de plataformas detectada. Objetivo: " + nextPlatformTarget.Value);
+        }
         DetectGaps();
         DetectObstacles();
+        CheckPlatformsAndGoal();
+        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
+        Debug.DrawRay(transform.position + (Vector3)(direction * 0.5f), Vector2.down * 1f, Color.blue);
 
-        if (!isStunned)
+        if (!isStunned && !isWaitingAfterObstacle)
         {
-            if (isWaitingAfterObstacle)
+            if (shouldJumpToPlatform)
+            {
+                // El salto ya se ejecutó en CheckPlatformsAndGoal()
+                // No mover para evitar conflicto con la física del salto
+            }
+            else if (isWaitingAfterObstacle)
             {
                 obstacleStopTimer -= Time.deltaTime;
                 if (obstacleStopTimer <= 0f)
@@ -96,12 +134,32 @@ public class TinyController : MonoBehaviour
             }
             else
             {
-                HandleMovement();
+                HandleMovement(); // Movimiento normal
             }
         }
 
         HandleSpriteRotation();
         HandleGapJump();
+
+        if (goal != null)
+        {
+            Debug.DrawLine(transform.position, goal.position, goalIsElevated ? Color.red : Color.yellow);
+        }
+
+        Debug.Log($"shouldJumpToPlatform: {shouldJumpToPlatform} | isGrounded: {isGrounded}");
+
+        if (goal != null)
+        {
+            // Círculo de distancia de llegada
+            Debug.DrawLine(goal.position - Vector3.right * goalReachedDistance,
+                           goal.position + Vector3.right * goalReachedDistance,
+                           hasReachedGoal ? Color.green : Color.yellow);
+
+            // Círculo de distancia de frenado
+            Debug.DrawLine(goal.position - Vector3.right * goalSlowDownDistance,
+                           goal.position + Vector3.right * goalSlowDownDistance,
+                           Color.blue);
+        }
     }
     #endregion CORE
 
@@ -135,7 +193,7 @@ public class TinyController : MonoBehaviour
         {
             TryJump();
             shouldJumpGap = false;
-            Debug.Log("¡Saltando hueco detectado!");
+            //Debug.Log("¡Saltando hueco detectado!");
         }
     }
 
@@ -157,12 +215,19 @@ public class TinyController : MonoBehaviour
             float force = customForce > 0 ? customForce : jumpForce;
             rb.velocity = new Vector2(rb.velocity.x, 0);
             rb.AddForce(Vector2.up * force, ForceMode2D.Impulse);
-            Debug.Log("Tiny saltó! Fuerza: " + jumpForce);
+            //Debug.Log("Tiny saltó! Fuerza: " + jumpForce);
         }
         else
         {
             Debug.Log("Tiny no puede saltar: No está en el suelo");
         }
+    }
+
+    private float CalculateJumpForce(float height)
+    {
+        // Fórmula física simplificada: v = sqrt(2 * g * h)
+        float gravity = Mathf.Abs(Physics2D.gravity.y) * rb.gravityScale;
+        return Mathf.Sqrt(2 * gravity * height) * 1.1f; // +10% de margen
     }
     #endregion JUMP
 
@@ -177,7 +242,7 @@ public class TinyController : MonoBehaviour
 
     void HandleMovement()
     {
-        if (!isGrounded) return;
+        if (!isGrounded || hasReachedGoal) return;
 
         float effectiveDirection = isReversed ? -currentDirection.x : currentDirection.x;
 
@@ -257,6 +322,188 @@ public class TinyController : MonoBehaviour
         }
     }
     #endregion MOVEMENT
+
+    #region PLATFORM DETECTION
+    private void ScanForPlatforms()
+    {
+        platformPositions.Clear();
+
+        // DETECCIÓN MEJORADA - Usar el máximo entre altura actual e inicial
+        float referenceHeight = Mathf.Max(transform.position.y, initialGroundHeight);
+        goalIsElevated = goal != null && goal.position.y > referenceHeight + minHeightToJump;
+
+        if (!goalIsElevated)
+        {
+            Debug.Log("Meta NO elevada. Altura meta: " + goal.position.y + " vs Referencia: " + (referenceHeight + minHeightToJump));
+            return;
+        }
+
+        Debug.Log("Meta elevada detectada. Saltando secuencia...");
+
+        // Escaneo desde el suelo hacia adelante (sistema anterior)
+        Vector2 scanOrigin = (Vector2)transform.position + Vector2.up * 0.1f;
+        float scanDirection = isFacingRight ? 1f : -1f;
+
+        for (float x = 0; x <= lookAheadDistance; x += 0.5f)
+        {
+            Vector2 checkPos = scanOrigin + new Vector2(x * scanDirection, 0);
+
+            // Raycast hacia ABAJO para encontrar plataformas
+            RaycastHit2D hit = Physics2D.Raycast(
+                checkPos + Vector2.up * maxJumpHeight,
+                Vector2.down,
+                maxJumpHeight + 1f,
+                groundLayer
+            );
+
+            if (hit.collider != null && hit.point.y > checkPos.y + minHeightToJump)
+            {
+                platformPositions.Add(hit.point);
+                Debug.DrawLine(checkPos, hit.point, Color.green, 0.1f);
+            }
+        }
+    }
+
+    private bool CheckPlatformSequence()
+    {
+        // Verificar si hay plataformas consecutivas hacia la meta
+        for (int i = 0; i < platformPositions.Count - 1; i++)
+        {
+            float gapWidth = Mathf.Abs(platformPositions[i + 1].x - platformPositions[i].x);
+            if (gapWidth > minGapWidth) // Hay un hueco significativo
+            {
+                nextPlatformTarget = platformPositions[i + 1];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void CheckPlatformsAndGoal()
+    {
+        /*
+        shouldJumpToPlatform = false; // Resetear cada frame
+
+        if (goal == null) return;
+
+        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
+        Vector2 origin = (Vector2)transform.position + direction * platformForwardOffset;
+
+        // 1. Calcular diferencia de altura con la meta
+        float goalHeightDiff = goal.position.y - transform.position.y;
+
+        // 2. Solo saltar si la meta está arriba y alcanzable
+        if (goalHeightDiff > minHeightToJump && goalHeightDiff <= maxJumpHeight)
+        {
+            RaycastHit2D[] hits = Physics2D.RaycastAll(
+                origin,
+                Vector2.up,
+                Mathf.Clamp(goalHeightDiff, minHeightToJump, maxJumpHeight),
+                groundLayer
+            );
+
+            // 5. Saltar la plataforma más baja que lleve a la meta
+            foreach (RaycastHit2D hit in hits.OrderBy(h => h.point.y))
+            {
+                float platformHeight = hit.point.y - transform.position.y;
+                if (platformHeight > minHeightToJump && isGrounded)
+                {
+                    shouldJumpToPlatform = true; // Activar el salto
+                    TryJump(CalculateJumpForce(platformHeight));
+                    break;
+                }
+            }
+        }
+
+        // Debug visual
+        Debug.DrawRay(origin, Vector2.up * maxJumpHeight, Color.cyan);
+        */
+        shouldJumpToPlatform = false;
+        if (!goalIsElevated || platformPositions.Count == 0) return;
+
+        Vector2 currentPos = transform.position;
+
+        // 1. PRIMERO: Verificar si hay un hueco adelante que requiera salto anticipado
+        CheckForGapAhead(currentPos);
+
+        // 2. SEGUNDO: Lógica original de salto a plataformas
+        Vector2? nearestPlatform = null;
+        float minDistance = float.MaxValue;
+
+        foreach (var platform in platformPositions)
+        {
+            float distance = Mathf.Abs(platform.x - currentPos.x);
+            bool inCorrectDirection = (isFacingRight && platform.x > currentPos.x) ||
+                                    (!isFacingRight && platform.x < currentPos.x);
+
+            if (inCorrectDirection && distance < minDistance && distance < 2f)
+            {
+                minDistance = distance;
+                nearestPlatform = platform;
+            }
+        }
+
+        if (nearestPlatform.HasValue && isGrounded)
+        {
+            float heightDiff = nearestPlatform.Value.y - currentPos.y;
+            if (heightDiff <= maxJumpHeight && heightDiff >= minHeightToJump)
+            {
+                shouldJumpToPlatform = true;
+                TryJump(CalculateJumpForce(heightDiff));
+                Debug.Log($"Saltando a plataforma ({nearestPlatform.Value.x}, {nearestPlatform.Value.y})");
+            }
+        }
+    }
+
+    private void CheckForGapAhead(Vector2 currentPos)
+    {
+        // Detectar huecos entre plataformas
+        float checkDistance = 0.5f; // Distancia para detectar huecos
+        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
+
+        // Verificar si hay suelo adelante
+        RaycastHit2D groundAhead = Physics2D.Raycast(
+            currentPos + direction * 0.5f,
+            Vector2.down,
+            1f,
+            groundLayer
+        );
+
+        // Si NO hay suelo adelante pero SÍ hay una plataforma después
+        if (groundAhead.collider == null)
+        {
+            foreach (var platform in platformPositions)
+            {
+                float platformDistance = Mathf.Abs(platform.x - currentPos.x);
+                if (platformDistance > checkDistance && platformDistance < 4f)
+                {
+                    // Saltar anticipadamente para evitar caer
+                    float heightDiff = platform.y - currentPos.y;
+                    if (heightDiff <= maxJumpHeight && isGrounded)
+                    {
+                        shouldJumpToPlatform = true;
+                        TryJump(CalculateJumpForce(heightDiff));
+                        Debug.Log("Saltando anticipadamente para evitar hueco");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private float GetNextPlatformHeight()
+    {
+        foreach (var platform in platformPositions.OrderBy(p => p.x))
+        {
+            if ((isFacingRight && platform.x > transform.position.x) ||
+                (!isFacingRight && platform.x < transform.position.x))
+            {
+                return platform.y;
+            }
+        }
+        return 0f;
+    }
+    #endregion PLATFORM DETECTION
 
     #region OBSTACLE DETECTION
     private void DetectObstacles()
@@ -380,6 +627,34 @@ public class TinyController : MonoBehaviour
     }
     #endregion WEAPON EFFECTS
 
+    private void CheckGoalProximity()
+    {
+        if (goal == null || hasReachedGoal) return;
+
+        float distanceToGoal = Vector2.Distance(transform.position, goal.position);
+
+        // Debug de distancia
+        Debug.Log($"Distancia a meta: {distanceToGoal}");
+
+        if (distanceToGoal <= goalReachedDistance)
+        {
+            // Llegó a la meta
+            hasReachedGoal = true;
+            rb.velocity = Vector2.zero;
+            Debug.Log("¡Tiny llegó a la meta!");
+        }
+        else if (distanceToGoal <= goalSlowDownDistance)
+        {
+            // Frenar al acercarse a la meta
+            float speedFactor = Mathf.Clamp01(distanceToGoal / goalSlowDownDistance);
+            currentSpeed = normalSpeed * speedFactor;
+        }
+        else
+        {
+            currentSpeed = normalSpeed;
+        }
+    }
+
     void Die()
     {
         Debug.Log("Tiny ha muerto!");
@@ -387,5 +662,4 @@ public class TinyController : MonoBehaviour
         // Aquí tu lógica para reiniciar nivel o mostrar Game Over
     }
 
-    
 }

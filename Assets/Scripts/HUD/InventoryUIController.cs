@@ -30,7 +30,7 @@ public class InventoryUIController : MonoBehaviour
 
     public void UpdateInventory(List<InventoryItem> items)
     {
-        Debug.Log($"Actualizando UI - Items: {items.Count}");
+        //Debug.Log($"Actualizando UI - Items: {items.Count}");
 
         foreach (Transform child in inventoryPanel)
         {
