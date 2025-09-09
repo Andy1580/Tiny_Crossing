@@ -2,8 +2,15 @@ using UnityEngine;
 
 public class Interactable : MonoBehaviour
 {
-    public enum InteractableType { Obstacle, MidObstacle, Weapon, InventoryItem }
+    public enum InteractableType { Obstacle, MidObstacle, Weapon, InventoryItem, PowerUp }
     public InteractableType interactableType;
+
+    public enum PowerUpType { None, SpeedBoost, Invulnerability, Invisibility }
+    public PowerUpType powerUpType = PowerUpType.None;
+
+    [Header("PowerUp Settings")]
+    public float powerUpDuration = 5f;
+    public float speedMultiplier = 2f;
 
     // Nuevo enum para tipos de armas
     public enum WeaponType { None, FlySwatter, Bat, Wrench }

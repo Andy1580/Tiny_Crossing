@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static Interactable;
 
 public class TinyController : MonoBehaviour
 {
@@ -46,6 +48,12 @@ public class TinyController : MonoBehaviour
     [SerializeField] private float goalSlowDownDistance = 2f; // Distancia para comenzar a frenar
     [SerializeField] private Transform goal;
     private bool hasReachedGoal = false;
+
+    [Header("PowerUp Detection")]
+    [SerializeField] private float powerUpDetectionRange = 3f;
+    [SerializeField] private LayerMask powerUpLayer;
+    private List<Interactable> detectedPowerUps = new List<Interactable>();
+    private Interactable currentTargetPowerUp = null;
 
     [Header("Platform Planning")]
     [SerializeField] private float lookAheadDistance = 10f; // Rango para escanear plataformas
@@ -103,6 +111,7 @@ public class TinyController : MonoBehaviour
         if (!isAlive || hasReachedGoal) return; // No hacer nada si llegó a la meta
 
         CheckGrounded();
+        DetectPowerUps();
         ScanForPlatforms();
         CheckGoalProximity(); // Escaneo temprano cada frame
         if (isOnPlatformSequence && nextPlatformTarget.HasValue)
@@ -118,7 +127,23 @@ public class TinyController : MonoBehaviour
 
         if (!isStunned && !isWaitingAfterObstacle)
         {
-            if (shouldJumpToPlatform)
+            if (ShouldPrioritizePowerUp())
+            {
+                if (ShouldJumpForPowerUp() && isGrounded)
+                {
+                    // Saltar hacia plataforma con power-up
+                    Vector2 targetPlatform = platformPositions.OrderBy(p =>
+                        Vector2.Distance(p, currentTargetPowerUp.transform.position)).First();
+                    float heightDiff = targetPlatform.y - transform.position.y;
+                    TryJump(CalculateJumpForce(heightDiff));
+                    Debug.Log("Saltando hacia plataforma con power-up");
+                }
+                else
+                {
+                    HandlePowerUpBehavior();
+                }
+            }
+            else if (shouldJumpToPlatform)
             {
                 // El salto ya se ejecutó en CheckPlatformsAndGoal()
                 // No mover para evitar conflicto con la física del salto
@@ -138,6 +163,7 @@ public class TinyController : MonoBehaviour
             }
         }
 
+        CheckPowerUpCollection();
         HandleSpriteRotation();
         HandleGapJump();
 
@@ -146,7 +172,7 @@ public class TinyController : MonoBehaviour
             Debug.DrawLine(transform.position, goal.position, goalIsElevated ? Color.red : Color.yellow);
         }
 
-        Debug.Log($"shouldJumpToPlatform: {shouldJumpToPlatform} | isGrounded: {isGrounded}");
+        //Debug.Log($"shouldJumpToPlatform: {shouldJumpToPlatform} | isGrounded: {isGrounded}");
 
         if (goal != null)
         {
@@ -328,13 +354,18 @@ public class TinyController : MonoBehaviour
     {
         platformPositions.Clear();
 
-        // DETECCIÓN MEJORADA - Usar el máximo entre altura actual e inicial
+        // DETECCIÓN MEJORADA - Siempre detectar plataformas si hay power-ups interesantes
+        bool interestingPowerUpNearby = detectedPowerUps.Any(p =>
+            p != null && p.CanInteract &&
+            Vector2.Distance(transform.position, p.transform.position) < 5f);
+
         float referenceHeight = Mathf.Max(transform.position.y, initialGroundHeight);
         goalIsElevated = goal != null && goal.position.y > referenceHeight + minHeightToJump;
 
-        if (!goalIsElevated)
+        // SIEMPRE escanear plataformas si hay power-ups interesantes o meta elevada
+        if (!goalIsElevated && !interestingPowerUpNearby)
         {
-            Debug.Log("Meta NO elevada. Altura meta: " + goal.position.y + " vs Referencia: " + (referenceHeight + minHeightToJump));
+            //Debug.Log("Meta NO elevada. Altura meta: " + goal.position.y + " vs Referencia: " + (referenceHeight + minHeightToJump));
             return;
         }
 
@@ -627,6 +658,192 @@ public class TinyController : MonoBehaviour
     }
     #endregion WEAPON EFFECTS
 
+    #region POWERUPS
+    private void DetectPowerUps()
+    {
+        detectedPowerUps.Clear();
+
+        Collider2D[] powerUpHits = Physics2D.OverlapCircleAll(
+            transform.position,
+            powerUpDetectionRange,
+            powerUpLayer
+        );
+
+        foreach (Collider2D hit in powerUpHits)
+        {
+            Interactable powerUp = hit.GetComponent<Interactable>();
+            if (powerUp != null && powerUp.powerUpType != PowerUpType.None && powerUp.CanInteract)
+            {
+                detectedPowerUps.Add(powerUp);
+            }
+        }
+
+        // Debug visual
+        foreach (Interactable powerUp in detectedPowerUps)
+        {
+            Debug.DrawLine(transform.position, powerUp.transform.position, Color.magenta);
+        }
+    }
+
+    private void HandlePowerUpBehavior()
+    {
+        if (currentTargetPowerUp == null || !ShouldPrioritizePowerUp()) return;
+
+        Vector2 directionToPowerUp = (currentTargetPowerUp.transform.position - transform.position).normalized;
+        bool shouldMoveRight = directionToPowerUp.x > 0;
+
+        if (shouldMoveRight != isFacingRight)
+        {
+            ToggleDirection();
+        }
+
+        // VERIFICAR SI EL POWER-UP ESTÁ ELEVADO Y NECESITA SALTO
+        float heightDifference = currentTargetPowerUp.transform.position.y - transform.position.y;
+
+        if (heightDifference > minHeightToJump && heightDifference <= maxJumpHeight && isGrounded)
+        {
+            // Saltar hacia el power-up elevado
+            TryJump(CalculateJumpForce(heightDifference));
+            Debug.Log("Saltando para alcanzar power-up elevado");
+        }
+
+        Debug.DrawLine(transform.position, currentTargetPowerUp.transform.position, Color.cyan);
+    }
+
+    private bool ShouldJumpForPowerUp()
+    {
+        if (currentTargetPowerUp == null) return false;
+
+        // Calcular si el power-up está en una plataforma
+        float heightDifference = currentTargetPowerUp.transform.position.y - transform.position.y;
+        bool isPowerUpElevated = heightDifference > minHeightToJump;
+
+        // Verificar si hay una plataforma que lleve al power-up
+        if (isPowerUpElevated)
+        {
+            foreach (var platform in platformPositions)
+            {
+                float platformHeight = platform.y - transform.position.y;
+                float horizontalDistance = Mathf.Abs(platform.x - transform.position.x);
+
+                if (platformHeight > minHeightToJump && platformHeight <= maxJumpHeight &&
+                    horizontalDistance < 3f)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void CheckPowerUpCollection()
+    {
+        if (currentTargetPowerUp == null) return;
+
+        float distance = Vector2.Distance(transform.position, currentTargetPowerUp.transform.position);
+        if (distance < 0.8f) // Aumenta la distancia de colección
+        {
+            CollectPowerUp(currentTargetPowerUp);
+            currentTargetPowerUp = null;
+        }
+    }
+
+    private void CollectPowerUp(Interactable powerUp)
+    {
+        if (!powerUp.CanInteract) return;
+
+        powerUp.MarkAsUsed();
+        powerUp.gameObject.SetActive(false); // Desactivar el objeto
+
+        ApplyPowerUp(powerUp);
+        Debug.Log("¡Power-up obtenido: " + powerUp.powerUpType + "!");
+    }
+
+    private void ApplyPowerUp(Interactable powerUp)
+    {
+        switch (powerUp.powerUpType)
+        {
+            case Interactable.PowerUpType.SpeedBoost:
+                StartCoroutine(SpeedBoostEffect(powerUp.powerUpDuration, powerUp.speedMultiplier));
+                break;
+            case Interactable.PowerUpType.Invulnerability:
+                StartCoroutine(InvulnerabilityEffect(powerUp.powerUpDuration));
+                break;
+            case Interactable.PowerUpType.Invisibility:
+                StartCoroutine(InvisibilityEffect(powerUp.powerUpDuration));
+                break;
+        }
+        Debug.Log("¡Power-up obtenido: " + powerUp.powerUpType + "!");
+    }
+
+    private IEnumerator SpeedBoostEffect(float duration, float multiplier)
+    {
+        Debug.Log("¡SpeedBoost activado! Duración: " + duration + "s");
+        float originalSpeed = normalSpeed;
+        normalSpeed *= multiplier; // Cambiar normalSpeed, no currentSpeed
+        currentSpeed = normalSpeed; // Actualizar currentSpeed también
+
+        // Efecto visual opcional (cambiar color)
+        SpriteRenderer spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        Color originalColor = spriteRenderer.color;
+        spriteRenderer.color = Color.yellow;
+
+        yield return new WaitForSeconds(duration);
+
+        normalSpeed = originalSpeed;
+        currentSpeed = normalSpeed;
+        spriteRenderer.color = originalColor;
+        Debug.Log("SpeedBoost terminado");
+    }
+
+    private IEnumerator InvulnerabilityEffect(float duration)
+    {
+        Debug.Log("¡Invulnerabilidad activada!");
+        yield return new WaitForSeconds(duration);
+        Debug.Log("Invulnerabilidad terminada");
+    }
+
+    private IEnumerator InvisibilityEffect(float duration)
+    {
+        Debug.Log("¡Invisibilidad activada!");
+        yield return new WaitForSeconds(duration);
+        Debug.Log("Invisibilidad terminada");
+    }
+    #endregion POWERUPS
+
+    #region PRIORITY SYSTEMS
+    private bool ShouldPrioritizePowerUp()
+    {
+        if (detectedPowerUps.Count == 0) return false;
+        if (goal == null) return true;
+
+        // Calcular distancia a la meta
+        float distanceToGoal = Vector2.Distance(transform.position, goal.position);
+
+        // Encontrar power-up más cercano
+        float minPowerUpDistance = Mathf.Infinity;
+        currentTargetPowerUp = null;
+
+        foreach (Interactable powerUp in detectedPowerUps)
+        {
+            if (!powerUp.CanInteract) continue;
+
+            float dist = Vector2.Distance(transform.position, powerUp.transform.position);
+            if (dist < minPowerUpDistance)
+            {
+                minPowerUpDistance = dist;
+                currentTargetPowerUp = powerUp;
+            }
+        }
+
+        if (currentTargetPowerUp == null) return false;
+
+        // Priorizar si está suficientemente cerca y/o la meta está lejos
+        return minPowerUpDistance < Mathf.Min(distanceToGoal * 0.4f, 3f);
+    }
+    #endregion PRIORITY SYSTEMS
+
     private void CheckGoalProximity()
     {
         if (goal == null || hasReachedGoal) return;
@@ -634,7 +851,7 @@ public class TinyController : MonoBehaviour
         float distanceToGoal = Vector2.Distance(transform.position, goal.position);
 
         // Debug de distancia
-        Debug.Log($"Distancia a meta: {distanceToGoal}");
+        //Debug.Log($"Distancia a meta: {distanceToGoal}");
 
         if (distanceToGoal <= goalReachedDistance)
         {
@@ -652,6 +869,20 @@ public class TinyController : MonoBehaviour
         else
         {
             currentSpeed = normalSpeed;
+        }
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        // Dibujar rango de detección de power-ups
+        Gizmos.color = Color.magenta;
+        Gizmos.DrawWireSphere(transform.position, powerUpDetectionRange);
+
+        // Dibujar línea al power-up objetivo
+        if (currentTargetPowerUp != null)
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawLine(transform.position, currentTargetPowerUp.transform.position);
         }
     }
 
