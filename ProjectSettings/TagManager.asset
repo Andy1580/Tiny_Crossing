@@ -9,6 +9,7 @@ TagManager:
   - NodeDetector
   - GapTrigger
   - Goal
+  - InitialChekpoint
   layers:
   - Default
   - TransparentFX

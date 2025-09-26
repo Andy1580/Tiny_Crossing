@@ -49,6 +49,10 @@ public class TinyController : MonoBehaviour
     [SerializeField] private Transform goal;
     private bool hasReachedGoal = false;
 
+    [Header("Checkpoint System")]
+    private CheckPoint currentCheckpoint;
+    private Vector3 initialSpawnPosition;
+
     [Header("PowerUp Detection")]
     [SerializeField] private float powerUpDetectionRange = 3f;
     [SerializeField] private LayerMask powerUpLayer;
@@ -104,6 +108,8 @@ public class TinyController : MonoBehaviour
         currentSpeed = normalSpeed;
         initialGroundHeight = transform.position.y;
         InitializeDirection();
+        initialSpawnPosition = transform.position;
+        InitializeCheckpointSystem();
     }
 
     void Update()
@@ -843,6 +849,185 @@ public class TinyController : MonoBehaviour
         return minPowerUpDistance < Mathf.Min(distanceToGoal * 0.4f, 3f);
     }
     #endregion PRIORITY SYSTEMS
+
+    #region CHECK POINT
+    private void InitializeCheckpointSystem()
+    {
+        // Prioridad 1: CheckpointManager
+        if (CheckPointManager.Instance != null)
+        {
+            Vector3 savedPosition = CheckPointManager.Instance.GetRespawnPosition();
+            if (savedPosition != Vector3.zero)
+            {
+                transform.position = savedPosition;
+                FindAndSetCurrentCheckpointByPosition(savedPosition);
+            }
+            else
+            {
+                FindInitialCheckpoint();
+            }
+        }
+        else
+        {
+            FindInitialCheckpoint();
+        }
+    }
+    /*
+    private void FindCurrentCheckpointInScene()
+    {
+        // Buscar el checkpoint que coincida con la posición guardada
+        CheckPoint[] allCheckpoints = FindObjectsByType<CheckPoint>(FindObjectsSortMode.None);
+        Vector3 savedPosition = CheckPointManager.Instance.currentCheckpoint.position;
+
+        foreach (CheckPoint checkpoint in allCheckpoints)
+        {
+            if (Vector3.Distance(checkpoint.transform.position, savedPosition) < 0.5f)
+            {
+                currentCheckpoint = checkpoint;
+                break;
+            }
+        }
+    }
+    */
+    private void FindInitialCheckpoint()
+    {
+        CheckPoint[] allCheckpoints = FindObjectsByType<CheckPoint>(FindObjectsSortMode.None);
+        CheckPoint initialCheckpoint = null;
+        CheckPoint fallbackCheckpoint = null;
+
+        foreach (CheckPoint checkpoint in allCheckpoints)
+        {
+            // Prioridad: checkpoint marcado como inicial
+            if (checkpoint.isInitialCheckpoint)
+            {
+                initialCheckpoint = checkpoint;
+                break;
+            }
+
+            // Fallback: primer checkpoint con orden 0
+            if (fallbackCheckpoint == null && checkpoint.checkpointOrder == 0)
+            {
+                fallbackCheckpoint = checkpoint;
+            }
+        }
+
+        currentCheckpoint = initialCheckpoint ?? fallbackCheckpoint ??
+                           (allCheckpoints.Length > 0 ? allCheckpoints[0] : null);
+
+        Debug.Log($"Checkpoint inicial asignado: {currentCheckpoint?.gameObject.name ?? "Ninguno"}");
+
+        Debug.Log("Checkpoint inicial: " + (currentCheckpoint != null ? currentCheckpoint.name : "Posición inicial"));
+    }
+
+    private void FindAndSetCurrentCheckpointByPosition(Vector3 position)
+    {
+        CheckPoint[] allCheckpoints = FindObjectsByType<CheckPoint>(FindObjectsSortMode.None);
+        float closestDistance = Mathf.Infinity;
+        CheckPoint closestCheckpoint = null;
+
+        foreach (CheckPoint checkpoint in allCheckpoints)
+        {
+            float distance = Vector3.Distance(checkpoint.transform.position, position);
+            if (distance < closestDistance && distance < 2f) // Radio de 2 unidades
+            {
+                closestDistance = distance;
+                closestCheckpoint = checkpoint;
+            }
+        }
+
+        if (closestCheckpoint != null)
+        {
+            currentCheckpoint = closestCheckpoint;
+            Debug.Log($"Checkpoint encontrado por posición: {closestCheckpoint.gameObject.name}");
+        }
+    }
+
+
+    public void SetCurrentCheckpoint(CheckPoint newCheckpoint)
+    {
+        if (newCheckpoint != null && newCheckpoint != currentCheckpoint)
+        {
+            currentCheckpoint = newCheckpoint;
+
+            // Registrar en el CheckpointManager
+            if (CheckPointManager.Instance != null)
+            {
+                CheckPointManager.Instance.RegisterCheckpoint(newCheckpoint);
+            }
+        }
+        Debug.Log("Checkpoint activado: " + newCheckpoint.name);
+    }
+
+    public void RespawnAtCheckpoint()
+    {
+        StartCoroutine(RespawnRoutine());
+    }
+
+    private System.Collections.IEnumerator RespawnRoutine()
+    {
+        // Pequeño delay para efectos
+        yield return new WaitForSeconds(0.5f);
+
+        Vector3 respawnPos = GetRespawnPosition();
+        transform.position = respawnPos;
+        ResetTinyState();
+
+        Debug.Log($"Tiny reapareció en: {respawnPos}");
+    }
+
+    private Vector3 GetRespawnPosition()
+    {
+        if (CheckPointManager.Instance != null)
+        {
+            Vector3 managerPos = CheckPointManager.Instance.GetRespawnPosition();
+            if (managerPos != Vector3.zero) return managerPos;
+        }
+
+        if (currentCheckpoint != null)
+            return currentCheckpoint.GetRespawnPosition();
+
+        return initialSpawnPosition;
+    }
+
+    /*
+    public void RespawnAtCheckpoint()
+    {
+        Vector3 respawnPos;
+
+        // PRIORIDAD 1: Usar CheckpointManager si existe
+        if (CheckPointManager.Instance != null &&
+            CheckPointManager.Instance.currentCheckpoint.position != Vector3.zero)
+        {
+            respawnPos = CheckPointManager.Instance.GetRespawnPosition();
+        }
+        // PRIORIDAD 2: Usar checkpoint local
+        else if (currentCheckpoint != null)
+        {
+            respawnPos = currentCheckpoint.GetRespawnPosition();
+        }
+        // PRIORIDAD 3: Posición inicial
+        else
+        {
+            respawnPos = initialSpawnPosition;
+        }
+
+        transform.position = respawnPos;
+        ResetTinyState();
+    }
+    */
+    private void ResetTinyState()
+    {
+        // Resetear todas las variables de estado
+        isAlive = true;
+        isStunned = false;
+        isReversed = false;
+        currentSpeed = normalSpeed;
+        rb.velocity = Vector2.zero;
+
+        // Resetear dirección inicial
+        InitializeDirection();
+    }
+    #endregion CHECK POINT
 
     private void CheckGoalProximity()
     {
