@@ -1029,6 +1029,72 @@ public class TinyController : MonoBehaviour
     }
     #endregion CHECK POINT
 
+    #region DIE
+    public void Die()
+    {
+        if (!isAlive) return;
+
+        Debug.Log("Tiny ha muerto!");
+        isAlive = false;
+
+        StartCoroutine(DeathSequence());
+    }
+
+    private IEnumerator DeathSequence()
+    {
+        // --- Preparación ---
+        // Desactivar collider y movimiento
+        CapsuleCollider2D capsule = GetComponent<CapsuleCollider2D>();
+        if (capsule != null)
+            capsule.enabled = false;
+
+        // Asegurarse de que no tenga velocidad previa
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        // Liberar rotación en Z para animación libre
+        rb.constraints = RigidbodyConstraints2D.None;
+
+        // --- Animación de "muerte" ---
+        // Pequeño salto hacia arriba
+        rb.AddForce(Vector2.up * 8f, ForceMode2D.Impulse);
+
+        // Aplicar un torque aleatorio (giro hacia un lado)
+        float randomDirection = Random.value > 0.5f ? 1f : -1f;
+        rb.AddTorque(randomDirection * 200f);
+
+        // Esperar mientras "cae fuera de pantalla"
+        yield return new WaitForSeconds(2f);
+
+        // --- Restaurar estado ---
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        // Restaurar freeze de rotación
+        rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+
+        // Reset de rotación visual
+        transform.rotation = Quaternion.identity;
+
+        // Restaurar collider
+        if (capsule != null)
+            capsule.enabled = true;
+
+        // Respawnear en checkpoint
+        RespawnAtCheckpoint();
+
+        Debug.Log("Tiny reapareció tras morir.");
+
+        // Tiny vuelve a estar vivo
+        isAlive = true;
+    }
+
+    public bool IsAlive()
+    {
+        return isAlive;
+    }
+    #endregion DIE
+
     private void CheckGoalProximity()
     {
         if (goal == null || hasReachedGoal) return;
@@ -1070,12 +1136,4 @@ public class TinyController : MonoBehaviour
             Gizmos.DrawLine(transform.position, currentTargetPowerUp.transform.position);
         }
     }
-
-    void Die()
-    {
-        Debug.Log("Tiny ha muerto!");
-        isAlive = false;
-        // Aquí tu lógica para reiniciar nivel o mostrar Game Over
-    }
-
 }
