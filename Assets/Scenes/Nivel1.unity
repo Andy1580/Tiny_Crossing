@@ -9584,12 +9584,13 @@ MonoBehaviour:
   target: {fileID: 1637111315}
   worldBounds: {fileID: 1081059951}
   leftMargin: 4
-  rightMargin: -8
+  rightMargin: 3
   topMargin: 2
   bottomMargin: 2
-  preventBacktracking: 1
+  preventBacktracking: 0
   lockVertical: 1
-  smoothTime: 0.12
+  smoothTime: 0.1
+  followDelay: 0.15
 --- !u!114 &2090884871
 MonoBehaviour:
   m_ObjectHideFlags: 0
