@@ -36,7 +36,7 @@ public class CheckPoint : MonoBehaviour
             tiny.SetCurrentCheckpoint(this);
         }
 
-        Debug.Log($"Checkpoint activado: {gameObject.name} (Orden: {checkpointOrder})");
+        //Debug.Log($"Checkpoint activado: {gameObject.name} (Orden: {checkpointOrder})");
     }
 
     public Vector3 GetRespawnPosition()

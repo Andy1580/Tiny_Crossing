@@ -34,7 +34,7 @@ public class CheckPointManager : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        Debug.Log($"Escena cargada: {scene.name}");
+        //Debug.Log($"Escena cargada: {scene.name}");
         InitializeCheckpointForScene(scene.name);
     }
 
@@ -54,7 +54,7 @@ public class CheckPointManager : MonoBehaviour
         currentCheckpoint.checkpointOrder = 0;
         currentCheckpoint.position = FindInitialSpawnInScene();
 
-        Debug.Log($"Checkpoint reset para escena: {sceneName}");
+        //Debug.Log($"Checkpoint reset para escena: {sceneName}");
     }
 
     private Vector3 FindInitialSpawnInScene()
@@ -85,7 +85,7 @@ public class CheckPointManager : MonoBehaviour
             currentCheckpoint.position = checkpoint.GetRespawnPosition();
             currentCheckpoint.checkpointOrder = checkpoint.checkpointOrder;
 
-            Debug.Log($"Checkpoint registrado: {checkpoint.gameObject.name} (Orden: {checkpoint.checkpointOrder})");
+            //Debug.Log($"Checkpoint registrado: {checkpoint.gameObject.name} (Orden: {checkpoint.checkpointOrder})");
         }
     }
 

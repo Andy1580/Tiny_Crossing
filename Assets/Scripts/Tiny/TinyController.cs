@@ -131,15 +131,28 @@ public class TinyController : MonoBehaviour
         Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
         Debug.DrawRay(transform.position + (Vector3)(direction * 0.5f), Vector2.down * 1f, Color.blue);
 
-        if (!isStunned && !isWaitingAfterObstacle)
+        // 1) Espera por obstáculo: SIEMPRE se procesa aquí
+        if (isWaitingAfterObstacle)
         {
+            obstacleStopTimer -= Time.deltaTime;
+            // Mantenerlo quieto horizontalmente mientras espera
+            rb.velocity = new Vector2(0f, rb.velocity.y);
+
+            if (obstacleStopTimer <= 0f)
+            {
+                isWaitingAfterObstacle = false;
+                ToggleDirection(); // ahora sí cambia de dirección
+            }
+        }
+        else if (!isStunned)
+        {
+            // 2) Lógica normal cuando NO está esperando y NO está aturdido
             if (ShouldPrioritizePowerUp())
             {
                 if (ShouldJumpForPowerUp() && isGrounded)
                 {
-                    // Saltar hacia plataforma con power-up
-                    Vector2 targetPlatform = platformPositions.OrderBy(p =>
-                        Vector2.Distance(p, currentTargetPowerUp.transform.position)).First();
+                    Vector2 targetPlatform = platformPositions
+                        .OrderBy(p => Vector2.Distance(p, currentTargetPowerUp.transform.position)).First();
                     float heightDiff = targetPlatform.y - transform.position.y;
                     TryJump(CalculateJumpForce(heightDiff));
                     Debug.Log("Saltando hacia plataforma con power-up");
@@ -151,17 +164,7 @@ public class TinyController : MonoBehaviour
             }
             else if (shouldJumpToPlatform)
             {
-                // El salto ya se ejecutó en CheckPlatformsAndGoal()
-                // No mover para evitar conflicto con la física del salto
-            }
-            else if (isWaitingAfterObstacle)
-            {
-                obstacleStopTimer -= Time.deltaTime;
-                if (obstacleStopTimer <= 0f)
-                {
-                    isWaitingAfterObstacle = false;
-                    ToggleDirection();
-                }
+                // El salto ya se ejecuta en CheckPlatformsAndGoal()
             }
             else
             {
@@ -914,9 +917,9 @@ public class TinyController : MonoBehaviour
         currentCheckpoint = initialCheckpoint ?? fallbackCheckpoint ??
                            (allCheckpoints.Length > 0 ? allCheckpoints[0] : null);
 
-        Debug.Log($"Checkpoint inicial asignado: {currentCheckpoint?.gameObject.name ?? "Ninguno"}");
+        //Debug.Log($"Checkpoint inicial asignado: {currentCheckpoint?.gameObject.name ?? "Ninguno"}");
 
-        Debug.Log("Checkpoint inicial: " + (currentCheckpoint != null ? currentCheckpoint.name : "Posición inicial"));
+        //Debug.Log("Checkpoint inicial: " + (currentCheckpoint != null ? currentCheckpoint.name : "Posición inicial"));
     }
 
     private void FindAndSetCurrentCheckpointByPosition(Vector3 position)
@@ -938,7 +941,7 @@ public class TinyController : MonoBehaviour
         if (closestCheckpoint != null)
         {
             currentCheckpoint = closestCheckpoint;
-            Debug.Log($"Checkpoint encontrado por posición: {closestCheckpoint.gameObject.name}");
+            //Debug.Log($"Checkpoint encontrado por posición: {closestCheckpoint.gameObject.name}");
         }
     }
 
@@ -955,7 +958,7 @@ public class TinyController : MonoBehaviour
                 CheckPointManager.Instance.RegisterCheckpoint(newCheckpoint);
             }
         }
-        Debug.Log("Checkpoint activado: " + newCheckpoint.name);
+        //Debug.Log("Checkpoint activado: " + newCheckpoint.name);
     }
 
     public void RespawnAtCheckpoint()
