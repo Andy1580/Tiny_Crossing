@@ -97,14 +97,22 @@ public class TinyController : MonoBehaviour
     private const float stuckThreshold = 0.05f;
     private Vector2 lastPosition;
 
+    // --- Ruta por hints ---
+    private JumpHints activeHint = null;
+    private float navTargetX = 0f;
+    private bool movingToHint = false;
+    private bool jumpingViaHint = false;
+
+    private bool isSearchingAlternateRoute = false;
+    private Vector2? retreatTarget = null;
+    private float retreatDirX = 0f;          // +1 derecha, -1 izquierda (dirección de RETORNO fija)
+    private float retreatFallbackTimer = 0f;  // pequeño tiempo de retroceso si no hay target
+
+
     #region CORE
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
-        rb.gravityScale = 3f; // Valor del código antiguo
-        rb.freezeRotation = true;
-        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-
         currentSpeed = normalSpeed;
         initialGroundHeight = transform.position.y;
         InitializeDirection();
@@ -114,39 +122,80 @@ public class TinyController : MonoBehaviour
 
     void Update()
     {
-        if (!isAlive || hasReachedGoal) return; // No hacer nada si llegó a la meta
+        if (!isAlive || hasReachedGoal) return;
 
+        // 1) Sensores base
         CheckGrounded();
+        CheckGoalProximity();
         DetectPowerUps();
         ScanForPlatforms();
-        CheckGoalProximity(); // Escaneo temprano cada frame
-        if (isOnPlatformSequence && nextPlatformTarget.HasValue)
-        {
-            Debug.DrawLine(transform.position, nextPlatformTarget.Value, Color.magenta);
-            Debug.Log("Secuencia de plataformas detectada. Objetivo: " + nextPlatformTarget.Value);
-        }
-        DetectGaps();
-        DetectObstacles();
-        CheckPlatformsAndGoal();
-        Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
-        Debug.DrawRay(transform.position + (Vector3)(direction * 0.5f), Vector2.down * 1f, Color.blue);
 
-        // 1) Espera por obstáculo: SIEMPRE se procesa aquí
+        // 2) Entorno (se calcula SIEMPRE antes de decidir)
+        DetectObstacles();
+        DetectGaps();                // <--- MUY IMPORTANTE
+        CheckPlatformsAndGoal();
+
+        // 3) Navegación por Hint (no cortes sin dejar saltar gaps)
+        if (movingToHint)
+        {
+            float dx = navTargetX - transform.position.x;
+            float dirX = Mathf.Sign(dx);
+            rb.velocity = new Vector2(dirX * normalSpeed, rb.velocity.y);
+
+            // permite saltar huecos mientras navega al hint
+            HandleGapJump();
+
+            if (Mathf.Abs(dx) < 0.12f && isGrounded)
+            {
+                rb.velocity = new Vector2(0f, rb.velocity.y);
+                movingToHint = false;
+                jumpingViaHint = true;
+
+                bool faceRightToJump = activeHint != null && activeHint.jumpTowardsRight;
+                if (faceRightToJump != isFacingRight) ToggleDirection();
+            }
+            return; // durante la navegación no ejecutamos la IA normal
+        }
+
+        if (jumpingViaHint && activeHint != null)
+        {
+            float height = activeHint.landing.position.y - transform.position.y;
+            if (height <= maxJumpHeight && isGrounded)
+                TryJump(CalculateJumpForce(height));
+
+            jumpingViaHint = false;
+            activeHint = null;
+            // luego sigue la IA normal
+        }
+
+        // 4) Espera por obstáculo
         if (isWaitingAfterObstacle)
         {
             obstacleStopTimer -= Time.deltaTime;
-            // Mantenerlo quieto horizontalmente mientras espera
             rb.velocity = new Vector2(0f, rb.velocity.y);
 
             if (obstacleStopTimer <= 0f)
             {
                 isWaitingAfterObstacle = false;
-                ToggleDirection(); // ahora sí cambia de dirección
+                ToggleDirection();           // gira
+                shouldJumpGap = false;       // limpia estado de gap
+                rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+                rb.WakeUp();
+
+                if (!PlanAlternateRouteWithHint())
+                {
+                    isSearchingAlternateRoute = true; // (si usas el fallback)
+                    retreatDirX = isFacingRight ? 1f : -1f;
+                    retreatTarget = FindRetreatPoint(retreatDirX);
+                    retreatFallbackTimer = retreatTarget.HasValue ? 0f : 1.0f;
+                }
             }
+            return; // no seguimos con IA normal durante la espera
         }
-        else if (!isStunned)
+
+        // 5) IA normal
+        if (!isStunned)
         {
-            // 2) Lógica normal cuando NO está esperando y NO está aturdido
             if (ShouldPrioritizePowerUp())
             {
                 if (ShouldJumpForPowerUp() && isGrounded)
@@ -155,46 +204,42 @@ public class TinyController : MonoBehaviour
                         .OrderBy(p => Vector2.Distance(p, currentTargetPowerUp.transform.position)).First();
                     float heightDiff = targetPlatform.y - transform.position.y;
                     TryJump(CalculateJumpForce(heightDiff));
-                    Debug.Log("Saltando hacia plataforma con power-up");
                 }
-                else
-                {
-                    HandlePowerUpBehavior();
-                }
+                else HandlePowerUpBehavior();
             }
             else if (shouldJumpToPlatform)
             {
-                // El salto ya se ejecuta en CheckPlatformsAndGoal()
+                // el salto ya se ejecutó en CheckPlatformsAndGoal()
             }
-            else
-            {
-                HandleMovement(); // Movimiento normal
-            }
+            else HandleMovement();
         }
 
-        CheckPowerUpCollection();
-        HandleSpriteRotation();
+        // 6) Gaps y recolecciones (por si no estás en movingToHint)
         HandleGapJump();
+        CheckPowerUpCollection();
 
-        if (goal != null)
-        {
-            Debug.DrawLine(transform.position, goal.position, goalIsElevated ? Color.red : Color.yellow);
-        }
+        // 7) Visual
+        HandleSpriteRotation();
 
-        //Debug.Log($"shouldJumpToPlatform: {shouldJumpToPlatform} | isGrounded: {isGrounded}");
+        //if (goal != null)
+        //{
+        //    Debug.DrawLine(transform.position, goal.position, goalIsElevated ? Color.red : Color.yellow);
+        //}
 
-        if (goal != null)
-        {
-            // Círculo de distancia de llegada
-            Debug.DrawLine(goal.position - Vector3.right * goalReachedDistance,
-                           goal.position + Vector3.right * goalReachedDistance,
-                           hasReachedGoal ? Color.green : Color.yellow);
+        ////Debug.Log($"shouldJumpToPlatform: {shouldJumpToPlatform} | isGrounded: {isGrounded}");
 
-            // Círculo de distancia de frenado
-            Debug.DrawLine(goal.position - Vector3.right * goalSlowDownDistance,
-                           goal.position + Vector3.right * goalSlowDownDistance,
-                           Color.blue);
-        }
+        //if (goal != null)
+        //{
+        //    // Círculo de distancia de llegada
+        //    Debug.DrawLine(goal.position - Vector3.right * goalReachedDistance,
+        //                   goal.position + Vector3.right * goalReachedDistance,
+        //                   hasReachedGoal ? Color.green : Color.yellow);
+
+        //    // Círculo de distancia de frenado
+        //    Debug.DrawLine(goal.position - Vector3.right * goalSlowDownDistance,
+        //                   goal.position + Vector3.right * goalSlowDownDistance,
+        //                   Color.blue);
+        //}
     }
     #endregion CORE
 
@@ -323,10 +368,35 @@ public class TinyController : MonoBehaviour
     // Método público para pruebas (puedes llamarlo desde otros scripts o eventos de Unity)
     public void ToggleDirection()
     {
+        // Si lo haces manual, cancela navegación guiada
+        movingToHint = false;
+        jumpingViaHint = false;
+
         currentDirection *= -1;
         isFacingRight = !isFacingRight;
         UpdateSpriteRotation();
+
+        // sincroniza física inmediatamente
+        if (isAlive)
+        {
+            rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+            rb.WakeUp();
+        }
+
         Debug.Log($"Dirección cambiada a: {(isFacingRight ? "Derecha" : "Izquierda")}");
+
+
+        /*
+        //Forzar sincronización física inmediata
+        if (isGrounded && isAlive)
+        {
+            float dirX = currentDirection.x;
+            rb.velocity = new Vector2(dirX * normalSpeed, rb.velocity.y);
+            rb.WakeUp(); // asegura que el cuerpo vuelva a simular
+        }
+
+        Debug.Log($"Dirección cambiada a: {(isFacingRight ? "Derecha" : "Izquierda")}");
+        */
     }
 
     // Método auxiliar para actualizar rotación
@@ -355,6 +425,74 @@ public class TinyController : MonoBehaviour
             lastPosition = transform.position;
             stuckTimer = 0f;
         }
+    }
+
+    private void ResumeMovementAfterStop()
+    {
+        if (!isAlive) return;
+
+        rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+        rb.WakeUp();
+    }
+
+    // --- NAV HINT MOVEMENT ---
+    private void HandleHintNavigation()
+    {
+        float dx = navTargetX - transform.position.x;
+        float dirX = Mathf.Sign(dx);
+        rb.velocity = new Vector2(dirX * normalSpeed, rb.velocity.y);
+
+        if (Mathf.Abs(dx) < 0.12f && isGrounded)
+        {
+            rb.velocity = new Vector2(0f, rb.velocity.y);
+            movingToHint = false;
+            jumpingViaHint = true;
+
+            bool faceRightToJump = activeHint != null && activeHint.jumpTowardsRight;
+            if (faceRightToJump != isFacingRight) ToggleDirection();
+        }
+    }
+
+    private void HandleHintJump()
+    {
+        float height = activeHint.landing.position.y - transform.position.y;
+        if (height <= maxJumpHeight && isGrounded)
+        {
+            TryJump(CalculateJumpForce(height));
+        }
+
+        jumpingViaHint = false;
+        activeHint = null;
+    }
+
+    // --- OBSTÁCULO WAIT ---
+    private void HandleObstacleWait()
+    {
+        obstacleStopTimer -= Time.deltaTime;
+        rb.velocity = new Vector2(0f, rb.velocity.y);
+
+        if (obstacleStopTimer <= 0f)
+        {
+            isWaitingAfterObstacle = false;
+            ToggleDirection();
+            shouldJumpGap = false;
+            ResumeMovementAfterStop();
+
+            if (!PlanAlternateRouteWithHint())
+            {
+                isSearchingAlternateRoute = true;
+                retreatDirX = isFacingRight ? 1f : -1f;
+                retreatTarget = FindRetreatPoint(retreatDirX);
+                retreatFallbackTimer = retreatTarget.HasValue ? 0f : 1.0f;
+            }
+        }
+    }
+
+    // --- DEBUG ---
+    private void DrawDebugHelpers()
+    {
+        if (goal == null) return;
+        Debug.DrawLine(transform.position, goal.position, goalIsElevated ? Color.red : Color.yellow);
     }
     #endregion MOVEMENT
 
@@ -597,6 +735,103 @@ public class TinyController : MonoBehaviour
 
         // Debug visual
         Debug.DrawLine(origin, origin + direction * obstacleDetectionRange, obstacleFound ? Color.red : Color.green);
+    }
+
+    private bool PlanAlternateRouteWithHint()
+    {
+        // Queremos saltar hacia el lado del obstáculo (opuesto a la dirección de retreat).
+        // Si acabas de bloquearte mirando a la derecha, tras el Toggle estarás mirando a la IZQUIERDA:
+        // queremos un hint que SALTE hacia la DERECHA.
+        bool wantJumpRight = !isFacingRight; // tras ToggleDirection()
+
+        var hints = FindObjectsByType<JumpHints>(FindObjectsSortMode.None);
+        if (hints == null || hints.Length == 0) return false;
+
+        JumpHints best = null;
+        float bestScore = float.MaxValue;
+
+        foreach (var h in hints)
+        {
+            if (h == null || h.landing == null) continue;
+            if (h.jumpTowardsRight != wantJumpRight) continue;
+
+            // Queremos un hint que esté "detrás" respecto a donde estaba el obstáculo.
+            // Si ahora miras a la izquierda (retreat), el hint debe estar a tu IZQUIERDA (x menor).
+            bool hintIsBehind = isFacingRight ? (h.transform.position.x > transform.position.x)
+                                              : (h.transform.position.x < transform.position.x);
+            if (!hintIsBehind) continue;
+
+            float dx = Mathf.Abs(h.transform.position.x - transform.position.x);
+            float dy = Mathf.Abs(h.landing.position.y - transform.position.y);
+            // usa una heurística simple: prioriza cercano en X y con altura razonable
+            float score = dx + dy * 0.5f;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = h;
+            }
+        }
+
+        if (best == null) return false;
+
+        activeHint = best;
+        navTargetX = activeHint.transform.position.x;
+        movingToHint = true;
+        jumpingViaHint = false;
+
+        // Asegura orientación para acercarte al hint
+        bool shouldFaceRight = navTargetX > transform.position.x;
+        if (shouldFaceRight != isFacingRight) ToggleDirection();
+
+        Debug.Log($"[Hints] Plan: ir a hint {activeHint.name}, saltar hacia {(activeHint.jumpTowardsRight ? "derecha" : "izquierda")}");
+        return true;
+    }
+
+    // === BUSCAR PUNTO SEGURO DETRÁS ===
+    private Vector2? FindRetreatPoint(float dirX)
+    {
+        // dirX = +1 derecha, -1 izquierda (ya fijada al iniciar el retreat)
+        Vector2 dirVec = new Vector2(dirX, 0f);
+
+        float step = 0.5f;       // pasos de escaneo
+        float maxDistance = 8f;  // hasta dónde retroceder como máximo
+        float probeHeight = 1.5f;
+        float maxDown = 3f;
+
+        Vector2 start = transform.position;
+
+        for (float d = 1f; d <= maxDistance; d += step)
+        {
+            // Escanear HACIA DONDE VAMOS A RETROCEDER
+            Vector2 probePos = start + dirVec * d;
+
+            // 1) Suelo bajo el punto probado
+            RaycastHit2D down = Physics2D.Raycast(
+                probePos + Vector2.up * probeHeight,
+                Vector2.down,
+                maxDown,
+                groundLayer
+            );
+            if (down.collider == null) continue;
+
+            // 2) Evitar bordes: debe haber suelo un poco adelante y un poco atrás del punto
+            bool groundAhead = Physics2D.Raycast(
+                probePos + dirVec * 0.4f + Vector2.up * 0.1f,
+                Vector2.down, 1f, groundLayer
+            );
+            bool groundBehind = Physics2D.Raycast(
+                probePos - dirVec * 0.4f + Vector2.up * 0.1f,
+                Vector2.down, 1f, groundLayer
+            );
+            if (!groundAhead || !groundBehind) continue;
+
+            // Punto válido
+            Debug.DrawLine(start, down.point, Color.cyan, 1f);
+            return down.point + Vector2.up * 0.1f;
+        }
+
+        return null; // no se encontró nada
     }
     #endregion OBSTACLE DETECTION
 
