@@ -17,6 +17,10 @@ public class TinyController : MonoBehaviour
     [Tooltip("Dirección inicial de movimiento")]
     public StartingDirection startDirection = StartingDirection.Right;
 
+    [Header("Speed Modifiers")]
+    private float speedDebuffFactor = 1f;     // bate
+    private float goalProximityFactor = 1f;   // meta
+
     [Header("Jump Settings")]
     [SerializeField] private float jumpForce = 8f;
     [SerializeField] private float groundCheckDistance = 0.2f;
@@ -53,11 +57,13 @@ public class TinyController : MonoBehaviour
     private CheckPoint currentCheckpoint;
     private Vector3 initialSpawnPosition;
 
-    [Header("PowerUp Detection")]
+    [Header("PowerUp Core")]
     [SerializeField] private float powerUpDetectionRange = 3f;
     [SerializeField] private LayerMask powerUpLayer;
     private List<Interactable> detectedPowerUps = new List<Interactable>();
     private Interactable currentTargetPowerUp = null;
+    private bool isInvisible = false;
+    private bool isInvincible = false;
 
     [Header("Platform Planning")]
     [SerializeField] private float lookAheadDistance = 10f; // Rango para escanear plataformas
@@ -102,7 +108,12 @@ public class TinyController : MonoBehaviour
     private float navTargetX = 0f;
     private bool movingToHint = false;
     private bool jumpingViaHint = false;
+    private bool awaitingHintLanding = false;
+    private float postLandingDelay = 0.3f;
+    private float landingTimer = 0f;
+    private bool hintJumpQueued = false;
 
+    private Coroutine invincibilityRoutine;
     private bool isSearchingAlternateRoute = false;
     private Vector2? retreatTarget = null;
     private float retreatDirX = 0f;          // +1 derecha, -1 izquierda (dirección de RETORNO fija)
@@ -140,7 +151,7 @@ public class TinyController : MonoBehaviour
         {
             float dx = navTargetX - transform.position.x;
             float dirX = Mathf.Sign(dx);
-            rb.velocity = new Vector2(dirX * normalSpeed, rb.velocity.y);
+            rb.velocity = new Vector2(dirX * currentSpeed, rb.velocity.y);
 
             // permite saltar huecos mientras navega al hint
             HandleGapJump();
@@ -160,12 +171,52 @@ public class TinyController : MonoBehaviour
         if (jumpingViaHint && activeHint != null)
         {
             float height = activeHint.landing.position.y - transform.position.y;
-            if (height <= maxJumpHeight && isGrounded)
-                TryJump(CalculateJumpForce(height));
+
+            if (height <= maxJumpHeight)
+            {
+                // Marcar que queremos saltar tan pronto toquemos el suelo
+                hintJumpQueued = true;
+            }
 
             jumpingViaHint = false;
-            activeHint = null;
-            // luego sigue la IA normal
+        }
+
+        if (hintJumpQueued && isGrounded && activeHint != null)
+        {
+            float height = activeHint.landing.position.y - transform.position.y;
+            TryJump(CalculateJumpForce(height));
+            awaitingHintLanding = true;
+            hintJumpQueued = false;
+
+            Debug.Log("Tiny ha ejecutado el salto hacia el Landing del Hint.");
+        }
+
+        if (awaitingHintLanding && activeHint != null)
+        {
+            float distToLanding = Vector2.Distance(transform.position, activeHint.landing.position);
+
+            if (distToLanding < 0.5f && isGrounded)
+            {
+                // Ya llegó al Landing
+                awaitingHintLanding = false;
+                landingTimer = postLandingDelay;
+                Debug.Log("Tiny aterrizó en el Landing del Hint. Preparando reanudación...");
+            }
+        }
+
+        if (landingTimer > 0f)
+        {
+            landingTimer -= Time.deltaTime;
+            rb.velocity = new Vector2(0f, rb.velocity.y); // Mantiene posición
+
+            if (landingTimer <= 0f)
+            {
+                activeHint = null; // Limpieza completa del hint
+                ResumeMovementAfterStop(); // Reanuda movimiento con velocidad normal
+                Debug.Log("Reanudando navegación tras Landing.");
+            }
+
+            return; // Durante el delay, no ejecutar IA normal
         }
 
         // 4) Espera por obstáculo
@@ -179,7 +230,7 @@ public class TinyController : MonoBehaviour
                 isWaitingAfterObstacle = false;
                 ToggleDirection();           // gira
                 shouldJumpGap = false;       // limpia estado de gap
-                rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+                rb.velocity = new Vector2(currentDirection.x * currentSpeed, rb.velocity.y);
                 rb.WakeUp();
 
                 if (!PlanAlternateRouteWithHint())
@@ -379,7 +430,7 @@ public class TinyController : MonoBehaviour
         // sincroniza física inmediatamente
         if (isAlive)
         {
-            rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+            rb.velocity = new Vector2(currentDirection.x * currentSpeed, rb.velocity.y);
             rb.WakeUp();
         }
 
@@ -431,7 +482,7 @@ public class TinyController : MonoBehaviour
     {
         if (!isAlive) return;
 
-        rb.velocity = new Vector2(currentDirection.x * normalSpeed, rb.velocity.y);
+        rb.velocity = new Vector2(currentDirection.x * currentSpeed, rb.velocity.y);
         rb.WakeUp();
     }
 
@@ -440,7 +491,7 @@ public class TinyController : MonoBehaviour
     {
         float dx = navTargetX - transform.position.x;
         float dirX = Mathf.Sign(dx);
-        rb.velocity = new Vector2(dirX * normalSpeed, rb.velocity.y);
+        rb.velocity = new Vector2(dirX * currentSpeed, rb.velocity.y);
 
         if (Mathf.Abs(dx) < 0.12f && isGrounded)
         {
@@ -686,10 +737,23 @@ public class TinyController : MonoBehaviour
     #region OBSTACLE DETECTION
     private void DetectObstacles()
     {
+        //No detectar obstáculos durante navegación por hint o salto
+        if (movingToHint || jumpingViaHint || hintJumpQueued || awaitingHintLanding)
+        {
+            Debug.Log("Obstacle check skipped due to active hint jump state");
+            return;
+        }
+
+        // Si Tiny está invisible, ignorar detección de obstáculos y trampas
+        if (isInvisible)
+        {
+            Debug.Log("Invisibility activa: ignorando detección de obstáculos");
+            return;
+        }
+
         Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
         Vector2 origin = (Vector2)transform.position + direction * 0.5f;
 
-        // 1. OverlapBox en la layer "Interactable"
         Collider2D[] hits = Physics2D.OverlapBoxAll(
             origin + direction * (obstacleDetectionRange * 0.5f),
             obstacleOverlapSize,
@@ -705,21 +769,18 @@ public class TinyController : MonoBehaviour
             Interactable interactable = hit.GetComponent<Interactable>();
             if (interactable == null) continue;
 
-            // ------- Reacción a Obstáculos Normales -------
             if (interactable.interactableType == Interactable.InteractableType.Obstacle)
             {
                 obstacleFound = true;
                 break;
             }
-            // ------- Reacción a MidObstacle (salto) -------
             else if (interactable.interactableType == Interactable.InteractableType.MidObstacle && isGrounded)
             {
-                TryJump(midObstacleJumpForce); // Salto con fuerza ajustada
+                TryJump(midObstacleJumpForce);
                 Debug.Log("¡Saltando MidObstacle!");
             }
         }
 
-        // 2. Lógica de reacción (igual que antes)
         if (obstacleFound && !isWaitingAfterObstacle)
         {
             isObstacleBlocking = true;
@@ -733,7 +794,6 @@ public class TinyController : MonoBehaviour
             isObstacleBlocking = false;
         }
 
-        // Debug visual
         Debug.DrawLine(origin, origin + direction * obstacleDetectionRange, obstacleFound ? Color.red : Color.green);
     }
 
@@ -846,6 +906,12 @@ public class TinyController : MonoBehaviour
 
     public void ApplyFlySwatterEffect(float power)
     {
+        if (isInvincible)
+        {
+            Debug.Log("Tiny es invencible: ignora efecto de FlySwatter");
+            return;
+        }
+
         Debug.Log($"FlySwatter aplicado! Poder: {power}. Inversión de dirección.");
         isReversed = true;
 
@@ -855,11 +921,22 @@ public class TinyController : MonoBehaviour
 
     public void ApplyBatEffect(float power)
     {
-        Debug.Log($"Bat aplicado! Poder: {power}. Reducción de velocidad.");
-        currentSpeed = Mathf.Lerp(normalSpeed, slowSpeed, power);
+        if (isInvincible)
+        {
+            Debug.Log("Tiny es invencible: ignora efecto de Bate");
+            return;
+        }
+
+        // target = slowSpeed/normalSpeed (cuánto queremos bajar como mínimo)
+        float targetFactor = slowSpeed / normalSpeed; // e.g. 1.5/3 = 0.5
+        speedDebuffFactor = Mathf.Lerp(1f, targetFactor, power); // 1 -> target según power
+        currentSpeed = normalSpeed * speedDebuffFactor * goalProximityFactor;
+
+        Debug.Log($"Factor bate: {speedDebuffFactor:F2} | currentSpeed: {currentSpeed:F2}");
 
         float effectDuration = GetEffectDuration(power);
-        Invoke("ResetSpeed", effectDuration);
+        CancelInvoke(nameof(ResetSpeed));              // evita stacking
+        Invoke(nameof(ResetSpeed), effectDuration);
 
         if (power >= 0.8f)
         {
@@ -870,8 +947,16 @@ public class TinyController : MonoBehaviour
 
     public void ApplyWrenchEffect(float power)
     {
+        if (isInvincible)
+        {
+            Debug.Log("Tiny es invencible: ignora efecto de Wrench");
+            return;
+        }
+
         Debug.Log($"Wrench aplicado! Poder: {power}. Aturdimiento.");
         isStunned = true;
+        rb.velocity = Vector2.zero;
+        rb.Sleep(); // pausa el cuerpo físico mientras está aturdido
 
         float effectDuration = GetEffectDuration(power);
         Invoke("EndStun", effectDuration);
@@ -891,14 +976,16 @@ public class TinyController : MonoBehaviour
 
     void ResetSpeed()
     {
-        Debug.Log("Velocidad de Tiny restaurada a " + normalSpeed);
-        currentSpeed = normalSpeed;
+        speedDebuffFactor = 1f;
+        currentSpeed = normalSpeed * goalProximityFactor; // respeta freno por meta
+        Debug.Log("Velocidad de Tiny restaurada a " + currentSpeed);
     }
 
     void EndStun()
     {
         Debug.Log("Tiny ya no está aturdido");
         isStunned = false;
+        rb.WakeUp();
     }
     #endregion WEAPON EFFECTS
 
@@ -998,9 +1085,14 @@ public class TinyController : MonoBehaviour
         if (!powerUp.CanInteract) return;
 
         powerUp.MarkAsUsed();
-        powerUp.gameObject.SetActive(false); // Desactivar el objeto
+        powerUp.gameObject.SetActive(false); // Se oculta visualmente
 
+        // Aplicar el efecto antes de destruir
         ApplyPowerUp(powerUp);
+
+        // Destruir con un pequeño retraso
+        StartCoroutine(DestroyAfterDelay(powerUp.gameObject, 0.2f));
+
         Debug.Log("¡Power-up obtenido: " + powerUp.powerUpType + "!");
     }
 
@@ -1012,6 +1104,7 @@ public class TinyController : MonoBehaviour
                 StartCoroutine(SpeedBoostEffect(powerUp.powerUpDuration, powerUp.speedMultiplier));
                 break;
             case Interactable.PowerUpType.Invulnerability:
+                if (invincibilityRoutine != null) StopCoroutine(InvulnerabilityEffect(0));
                 StartCoroutine(InvulnerabilityEffect(powerUp.powerUpDuration));
                 break;
             case Interactable.PowerUpType.Invisibility:
@@ -1019,6 +1112,16 @@ public class TinyController : MonoBehaviour
                 break;
         }
         Debug.Log("¡Power-up obtenido: " + powerUp.powerUpType + "!");
+    }
+
+    private IEnumerator DestroyAfterDelay(GameObject obj, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (obj != null)
+        {
+            Destroy(obj);
+            Debug.Log("Power-up destruido tras aplicar efecto");
+        }
     }
 
     private IEnumerator SpeedBoostEffect(float duration, float multiplier)
@@ -1043,16 +1146,111 @@ public class TinyController : MonoBehaviour
 
     private IEnumerator InvulnerabilityEffect(float duration)
     {
-        Debug.Log("¡Invulnerabilidad activada!");
-        yield return new WaitForSeconds(duration);
-        Debug.Log("Invulnerabilidad terminada");
+        // Debug inicial
+        Debug.Log($"Invincibilidad activada por {duration} s");
+
+        isInvincible = true;
+
+        // Visual
+        SpriteRenderer spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        Color originalColor = spriteRenderer != null ? spriteRenderer.color : Color.white;
+
+        // Si quieres que NO se afecte por timeScale=0, usa Time.unscaledTime y WaitForSecondsRealtime
+        float endTime = Time.time + duration;
+        bool toggle = false;
+
+        try
+        {
+            while (Time.time < endTime)
+            {
+                // Debug opcional: muestra tiempo restante real
+                // Debug.Log($"Invincible remaining: {(endTime - Time.time):F2}s");
+
+                // Parpadeo
+                if (spriteRenderer != null)
+                {
+                    toggle = !toggle;
+                    spriteRenderer.color = toggle ? Color.yellow : originalColor;
+                }
+
+                // Espera fija entre flashes (tiempo escalado)
+                yield return new WaitForSeconds(0.15f);
+            }
+        }
+        finally
+        {
+            // Restaurar siempre, incluso si la corrutina se detiene/lanza excepción
+            if (spriteRenderer != null)
+                spriteRenderer.color = originalColor;
+
+            isInvincible = false;
+            Debug.Log("Invincibilidad terminada");
+        }
     }
 
     private IEnumerator InvisibilityEffect(float duration)
     {
-        Debug.Log("¡Invisibilidad activada!");
-        yield return new WaitForSeconds(duration);
-        Debug.Log("Invisibilidad terminada");
+        Debug.Log("Invisibility activada");
+
+        // 1. Activar estado
+        isInvisible = true;
+
+        // 2. Efecto visual
+        SpriteRenderer spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        Color originalColor = spriteRenderer.color;
+        spriteRenderer.color = new Color(originalColor.r, originalColor.g, originalColor.b, 0.4f);
+
+        // 3. Ignorar físicamente obstáculos y mid obstacles actuales en escena
+        Collider2D myCollider = GetComponent<Collider2D>();
+        Interactable[] interactables = FindObjectsByType<Interactable>(FindObjectsSortMode.None);
+        List<Collider2D> ignoredColliders = new List<Collider2D>();
+
+        foreach (var interactable in interactables)
+        {
+            if (interactable == null) continue;
+
+            // Solo los tipos de obstáculo físicos
+            if (interactable.interactableType == Interactable.InteractableType.Obstacle ||
+                interactable.interactableType == Interactable.InteractableType.MidObstacle)
+            {
+                Collider2D obstacleCol = interactable.GetComponent<Collider2D>();
+                if (obstacleCol != null)
+                {
+                    Physics2D.IgnoreCollision(myCollider, obstacleCol, true);
+                    ignoredColliders.Add(obstacleCol);
+                }
+            }
+        }
+
+        Debug.Log("Tiny ahora puede atravesar obstáculos y mid obstacles");
+
+        // 4. Esperar la duración del efecto
+        float timer = 0f;
+        while (timer < duration)
+        {
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        // 5. Restaurar colisiones
+        foreach (var obstacleCol in ignoredColliders)
+        {
+            if (obstacleCol != null)
+            {
+                Physics2D.IgnoreCollision(myCollider, obstacleCol, false);
+            }
+        }
+
+        // 6. Restaurar opacidad
+        spriteRenderer.color = originalColor;
+        isInvisible = false;
+
+        Debug.Log("Invisibility terminada: Tiny vuelve a colisionar con los obstáculos");
+    }
+
+    public bool IsInvincible()
+    {
+        return isInvincible;
     }
     #endregion POWERUPS
 
@@ -1339,26 +1537,24 @@ public class TinyController : MonoBehaviour
 
         float distanceToGoal = Vector2.Distance(transform.position, goal.position);
 
-        // Debug de distancia
-        //Debug.Log($"Distancia a meta: {distanceToGoal}");
-
         if (distanceToGoal <= goalReachedDistance)
         {
-            // Llegó a la meta
             hasReachedGoal = true;
             rb.velocity = Vector2.zero;
             Debug.Log("¡Tiny llegó a la meta!");
         }
         else if (distanceToGoal <= goalSlowDownDistance)
         {
-            // Frenar al acercarse a la meta
             float speedFactor = Mathf.Clamp01(distanceToGoal / goalSlowDownDistance);
-            currentSpeed = normalSpeed * speedFactor;
+            goalProximityFactor = speedFactor;   // SOLO factor de meta
         }
         else
         {
-            currentSpeed = normalSpeed;
+            goalProximityFactor = 1f;
         }
+
+        // Recalcular la velocidad efectiva combinando factores
+        currentSpeed = normalSpeed * speedDebuffFactor * goalProximityFactor;
     }
 
     private void OnDrawGizmosSelected()

@@ -193,6 +193,19 @@ public class InteractiveHand : MonoBehaviour
 
         weapon.isHoldingByHand = false;
 
+        // NUEVA SECCIÓN: Si Tiny es invencible, destruir el arma y salir
+        if (tiny != null)
+        {
+            TinyController tinyController = tiny.GetComponent<TinyController>();
+            if (tinyController != null && tinyController.IsInvincible())
+            {
+                Debug.Log("Tiny es invencible: el arma se destruye sin efecto");
+                Destroy(weapon.gameObject);
+                isAttachedToTiny = false;
+                return;
+            }
+        }
+
         // Iniciar barra de poder usando el tipo de arma del Interactable
         powerBar.StartPowerBar(weapon.weaponType, (powerValue) =>
         {
