@@ -61,6 +61,22 @@ public class InventorySystem : MonoBehaviour
         return false;
     }
 
+    public bool RemoveItemOfType(InventoryItem.ItemType type)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (items[i].itemType == type)
+            {
+                Debug.Log($"Removido item de tipo: {type}");
+                items.RemoveAt(i);
+                InventoryUIController.Instance?.UpdateInventory(items);
+                return true;
+            }
+        }
+        Debug.Log($"No se encontró item de tipo: {type} para eliminar.");
+        return false;
+    }
+
     public List<InventoryItem> GetAllItems()
     {
         return new List<InventoryItem>(items);

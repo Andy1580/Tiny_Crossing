@@ -6,6 +6,15 @@ public class InteractiveHand : MonoBehaviour
     [SerializeField] private float moveSpeed = 15f;
     [SerializeField] private float grabRadius = 0.5f;
 
+    // --- Mecanismo ---
+    private bool isAttachedToMechanism = false;
+    [SerializeField] private TrapMechanism attachedMechanism;
+    private Vector3 handOffsetFromMechanism = new Vector3(0f, 0.4f, 0f);
+
+    // --- Control del tiempo entre clics de mecanismo ---
+    [SerializeField] private float mechanismClickDelay = 0.6f; // segundos de espera mínima
+    private float mechanismClickTimer = 0f;
+
     [Header("Timers")]
     [SerializeField] private float obstacleHoldTime = 5f;
     [SerializeField] private float weaponHoldTime = 3f;
@@ -28,11 +37,13 @@ public class InteractiveHand : MonoBehaviour
     private Vector2 objectGrabOffset;
     private float currentHoldTimer;
     private bool isHoldingObject;
+    private bool isMechanismAwaitingConfirm = false;
 
     void Start()
     {
         mainCamera = Camera.main;
         transform.position = new Vector3(transform.position.x, transform.position.y, 0);
+        mechanismClickTimer = 0f;
     }
 
     void Update()
@@ -43,9 +54,42 @@ public class InteractiveHand : MonoBehaviour
         }
 
         HandleInteraction();
+        // Contador para evitar activaciones instantáneas
+        if (mechanismClickTimer > 0f)
+            mechanismClickTimer -= Time.deltaTime;
+
+        // --- Clic global para confirmar mecanismo ---
+        if (isMechanismAwaitingConfirm && Input.GetMouseButtonDown(0) && mechanismClickTimer <= 0f)
+        {
+            if (attachedMechanism != null && attachedMechanism.IsPreActivating())
+            {
+                Debug.Log("Clic global detectado (confirmación remota).");
+                attachedMechanism.TryActivate();
+                ReleaseFromMechanism();
+
+                isMechanismAwaitingConfirm = false;
+                attachedMechanism = null;
+            }
+        }
+
         UpdateTimers();
         ConstrainToViewport();
         HandleTinyAttachment();
+        HandleMechanismAttachment();
+
+        // Limpieza de referencia si el mecanismo desaparece o se destruye
+        if (isMechanismAwaitingConfirm && attachedMechanism == null)
+        {
+            isMechanismAwaitingConfirm = false;
+            isAttachedToMechanism = false;
+            Debug.LogWarning("Mecanismo perdido o destruido: referencia limpiada.");
+        }
+
+        // Evitar interacciones si ya estamos anclados a Tiny o a un mecanismo
+        if (isAttachedToTiny || isAttachedToMechanism)
+        {
+            return; // previene clics adicionales mientras está anclada
+        }
     }
 
     void HandleMovement()
@@ -57,13 +101,11 @@ public class InteractiveHand : MonoBehaviour
 
     void HandleInteraction()
     {
-        // Solo procesar clic si no estamos sosteniendo un objeto
         if (Input.GetMouseButtonDown(0) && grabbedObject == null)
         {
             TryGrabObject();
         }
 
-        // Soltar objeto solo si estamos sosteniendo algo
         if (Input.GetMouseButtonUp(0) && grabbedObject != null)
         {
             ReleaseObject();
@@ -80,39 +122,89 @@ public class InteractiveHand : MonoBehaviour
         Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, grabRadius, interactableLayer);
         if (hits.Length == 0) return;
 
-        // Tomar solo el primer hit
         Collider2D hit = hits[0];
         Interactable interactable = hit.GetComponent<Interactable>();
 
         if (interactable != null && interactable.CanInteract)
         {
-            grabbedObject = hit.gameObject;
-            objectGrabOffset = (Vector2)grabbedObject.transform.position - (Vector2)transform.position;
+            // IMPORTANTE:
+            // Solo asignamos grabbedObject para tipos que realmente se pueden mover
+            if (interactable.interactableType != Interactable.InteractableType.Mechanism)
+            {
+                grabbedObject = hit.gameObject;
+                objectGrabOffset = (Vector2)grabbedObject.transform.position - (Vector2)transform.position;
+            }
 
             switch (interactable.interactableType)
             {
                 case Interactable.InteractableType.InventoryItem:
                     if (interactable.inventoryItem != null)
                     {
-                        // Solo intentar agregar al inventario (el sistema manejará el límite)
                         interactable.AddToInventory();
                         grabbedObject = null;
                     }
                     break;
+
                 case Interactable.InteractableType.Obstacle:
                     currentHoldTimer = obstacleHoldTime;
                     isHoldingObject = true;
                     interactable.DisablePhysics();
                     break;
+
                 case Interactable.InteractableType.MidObstacle:
                     currentHoldTimer = obstacleHoldTime;
                     isHoldingObject = true;
                     interactable.DisablePhysics();
                     break;
+
                 case Interactable.InteractableType.Weapon:
                     currentHoldTimer = weaponHoldTime;
                     isHoldingObject = true;
                     interactable.isHoldingByHand = true;
+                    break;
+
+                case Interactable.InteractableType.Mechanism:
+                    TrapMechanism mechanism = hit.GetComponent<TrapMechanism>();
+                    if (mechanism == null) break;
+
+                    // Primer clic sobre un nuevo mecanismo
+                    if (!isMechanismAwaitingConfirm)
+                    {
+                        // Si no tiene palanca
+                        if (!InventorySystem.Instance.HasItemOfType(InventoryItem.ItemType.Lever))
+                        {
+                            mechanism.TryActivate(); // solo flash rojo
+                            Debug.Log("Sin palanca: solo feedback visual.");
+                            break;
+                        }
+
+                        // Guardar referencia y entrar en preactivación
+                        attachedMechanism = mechanism;
+                        isMechanismAwaitingConfirm = true;
+                        mechanismClickTimer = mechanismClickDelay; // empieza cooldown
+
+                        AttachToMechanism(mechanism);
+                        mechanism.TryActivate();
+                        Debug.Log("Entrando en preactivación del mecanismo (esperando confirmación).");
+                    }
+                    else
+                    {
+                        // Solo permitir la confirmación si ya pasó el tiempo mínimo
+                        if (mechanismClickTimer <= 0f && attachedMechanism != null && attachedMechanism.IsPreActivating())
+                        {
+                            attachedMechanism.TryActivate();
+                            ReleaseFromMechanism();
+                            Debug.Log("Confirmación completada (segundo clic).");
+                        }
+                        else
+                        {
+                            Debug.Log("Clic ignorado: espera a que pase el delay visual.");
+                            break;
+                        }
+
+                        isMechanismAwaitingConfirm = false;
+                        attachedMechanism = null;
+                    }
                     break;
             }
         }
@@ -193,7 +285,6 @@ public class InteractiveHand : MonoBehaviour
 
         weapon.isHoldingByHand = false;
 
-        // NUEVA SECCIÓN: Si Tiny es invencible, destruir el arma y salir
         if (tiny != null)
         {
             TinyController tinyController = tiny.GetComponent<TinyController>();
@@ -206,7 +297,6 @@ public class InteractiveHand : MonoBehaviour
             }
         }
 
-        // Iniciar barra de poder usando el tipo de arma del Interactable
         powerBar.StartPowerBar(weapon.weaponType, (powerValue) =>
         {
             ApplyWeaponEffect(weapon, powerValue);
@@ -219,6 +309,38 @@ public class InteractiveHand : MonoBehaviour
         if (isAttachedToTiny && tiny != null)
         {
             transform.position = tiny.transform.position + handOffsetFromTiny;
+        }
+    }
+
+    private void HandleMechanismAttachment()
+    {
+        if (isAttachedToMechanism && attachedMechanism != null)
+        {
+            transform.position = attachedMechanism.transform.position + handOffsetFromMechanism;
+        }
+    }
+
+    public void AttachToMechanism(TrapMechanism mechanism)
+    {
+        isAttachedToMechanism = true;
+        attachedMechanism = mechanism;
+
+        SpriteRenderer sr = GetComponentInChildren<SpriteRenderer>();
+        if (sr != null)
+        {
+            Color c = sr.color; c.a = 0f; sr.color = c;
+        }
+    }
+
+    public void ReleaseFromMechanism()
+    {
+        isAttachedToMechanism = false;
+        attachedMechanism = null;
+
+        SpriteRenderer sr = GetComponentInChildren<SpriteRenderer>();
+        if (sr != null)
+        {
+            Color c = sr.color; c.a = 1f; sr.color = c;
         }
     }
 
@@ -240,7 +362,6 @@ public class InteractiveHand : MonoBehaviour
                 break;
         }
 
-        // Restaurar control de mano
         isAttachedToTiny = false;
         Destroy(weapon.gameObject);
     }

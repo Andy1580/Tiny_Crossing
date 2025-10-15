@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class Interactable : MonoBehaviour
 {
-    public enum InteractableType { Obstacle, MidObstacle, Weapon, InventoryItem, PowerUp }
+    public enum InteractableType { Obstacle, MidObstacle, Weapon, InventoryItem, PowerUp, Mechanism }
     public InteractableType interactableType;
 
     public enum PowerUpType { None, SpeedBoost, Invulnerability, Invisibility }

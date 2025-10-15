@@ -10,6 +10,7 @@ TagManager:
   - GapTrigger
   - Goal
   - InitialChekpoint
+  - TapWarning
   layers:
   - Default
   - TransparentFX

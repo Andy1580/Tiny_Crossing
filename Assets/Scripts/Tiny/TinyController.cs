@@ -26,6 +26,11 @@ public class TinyController : MonoBehaviour
     [SerializeField] private float groundCheckDistance = 0.2f;
     [SerializeField] private LayerMask groundLayer;
 
+    // === Trap jump queue ===
+    [SerializeField] private float trapJumpGraceWindow = 0.15f; // ventana de gracia (seg)
+    private float trapJumpTimer = 0f;
+    private float queuedTrapJumpForce = 0f;
+
     [Header("Gap Detection")]
     [SerializeField] private float gapDetectionDistance = 1.5f;
     [SerializeField] private Vector2 gapCheckSize = new Vector2(0.8f, 0.1f);
@@ -137,6 +142,23 @@ public class TinyController : MonoBehaviour
 
         // 1) Sensores base
         CheckGrounded();
+
+        // Ejecutar salto de trampa si está en ventana de gracia
+        if (trapJumpTimer > 0f)
+        {
+            trapJumpTimer -= Time.deltaTime;
+
+            // si tocamos suelo durante la ventana -> saltamos
+            if (isGrounded)
+            {
+                float f = queuedTrapJumpForce > 0f ? queuedTrapJumpForce : midObstacleJumpForce;
+                Debug.Log("[Tiny] Ejecutando salto por TrapWarning");
+                TryJump(f);
+                queuedTrapJumpForce = 0f;
+                trapJumpTimer = 0f;
+            }
+        }
+
         CheckGoalProximity();
         DetectPowerUps();
         ScanForPlatforms();
@@ -737,23 +759,61 @@ public class TinyController : MonoBehaviour
     #region OBSTACLE DETECTION
     private void DetectObstacles()
     {
-        //No detectar obstáculos durante navegación por hint o salto
-        if (movingToHint || jumpingViaHint || hintJumpQueued || awaitingHintLanding)
-        {
-            Debug.Log("Obstacle check skipped due to active hint jump state");
-            return;
-        }
+        // No detectar durante navegación/cola de salto por hint
+        if (movingToHint || jumpingViaHint || hintJumpQueued || awaitingHintLanding) return;
 
-        // Si Tiny está invisible, ignorar detección de obstáculos y trampas
-        if (isInvisible)
-        {
-            Debug.Log("Invisibility activa: ignorando detección de obstáculos");
-            return;
-        }
+        // Invisibilidad: ignora todo
+        if (isInvisible) return;
 
         Vector2 direction = isFacingRight ? Vector2.right : Vector2.left;
         Vector2 origin = (Vector2)transform.position + direction * 0.5f;
+        /*
+        // ============================
+        // PASO 1) Detección de TRAMPAS
+        // ============================
+        // Caja MÁS ALTA y un poco MÁS BAJA respecto al centro para atrapar spikes enterrados.
+        Vector2 trapBoxSize = new Vector2(obstacleOverlapSize.x, obstacleOverlapSize.y + 0.6f);
+        Vector2 trapBoxCenter = origin + direction * (obstacleDetectionRange * 0.5f) + Vector2.down * 0.25f;
 
+        // Capa combinada por si algún pico quedó en Default.
+        int trapLayerMask = interactableLayer | LayerMask.GetMask("Default");
+
+        Collider2D[] trapHits = Physics2D.OverlapBoxAll(
+            trapBoxCenter,
+            trapBoxSize,
+            0f,
+            trapLayerMask
+        );
+
+        // Debug visual de la caja de trampas
+        DrawWireBox(trapBoxCenter, trapBoxSize, Color.cyan);
+
+        foreach (var h in trapHits)
+        {
+            // Buscar TrapController en el mismo objeto o en el padre
+            TrapController trap = h.GetComponent<TrapController>();
+            if (trap == null && h.transform.parent != null)
+                trap = h.transform.parent.GetComponent<TrapController>();
+
+            if (trap != null)
+            {
+                // NO descartes triggers aquí: los spikes usan trigger (KillZone)
+                bool trapActive = trap.IsTrapActive();
+                Debug.Log($"Trap detectada: {h.name}, Activa={trapActive}");
+
+                if (trapActive && isGrounded && !isStunned)
+                {
+                    Debug.Log($"Tiny salta por trampa activa: {h.name}");
+                    TryJump(midObstacleJumpForce * 1.2f); // pequeño boost por seguridad
+                    break; // evita múltiples saltos en un mismo frame
+                }
+            }
+            Debug.Log($"TrapHit: {h.name} | layer={LayerMask.LayerToName(h.gameObject.layer)} | trigger={h.isTrigger}");
+        }
+        */
+        // =========================================
+        // PASO 2) Obstáculos normales / midObstacle
+        // =========================================
         Collider2D[] hits = Physics2D.OverlapBoxAll(
             origin + direction * (obstacleDetectionRange * 0.5f),
             obstacleOverlapSize,
@@ -762,8 +822,10 @@ public class TinyController : MonoBehaviour
         );
 
         bool obstacleFound = false;
+
         foreach (Collider2D hit in hits)
         {
+            // Para OBSTÁCULOS normales y MID, sí filtramos triggers:
             if (hit.isTrigger) continue;
 
             Interactable interactable = hit.GetComponent<Interactable>();
@@ -776,8 +838,8 @@ public class TinyController : MonoBehaviour
             }
             else if (interactable.interactableType == Interactable.InteractableType.MidObstacle && isGrounded)
             {
-                TryJump(midObstacleJumpForce);
                 Debug.Log("¡Saltando MidObstacle!");
+                TryJump(midObstacleJumpForce);
             }
         }
 
@@ -794,7 +856,23 @@ public class TinyController : MonoBehaviour
             isObstacleBlocking = false;
         }
 
+        // Línea de debug del rango horizontal original
         Debug.DrawLine(origin, origin + direction * obstacleDetectionRange, obstacleFound ? Color.red : Color.green);
+    }
+
+    // Helper para dibujar una caja en escena (debug visual)
+    private void DrawWireBox(Vector2 center, Vector2 size, Color color)
+    {
+        Vector2 half = size * 0.5f;
+        Vector2 a = center + new Vector2(-half.x, -half.y);
+        Vector2 b = center + new Vector2(-half.x, half.y);
+        Vector2 c = center + new Vector2(half.x, half.y);
+        Vector2 d = center + new Vector2(half.x, -half.y);
+
+        Debug.DrawLine(a, b, color);
+        Debug.DrawLine(b, c, color);
+        Debug.DrawLine(c, d, color);
+        Debug.DrawLine(d, a, color);
     }
 
     private bool PlanAlternateRouteWithHint()
@@ -892,6 +970,20 @@ public class TinyController : MonoBehaviour
         }
 
         return null; // no se encontró nada
+    }
+
+    public bool IsInvisible() => isInvisible;
+    public float GetMidObstacleJumpForce() => midObstacleJumpForce;
+
+    public void QueueTrapJump(float force)
+    {
+        // si está aturdido o ya muerto, ignora
+        if (!isAlive || isStunned) return;
+
+        // acumulamos el mayor force pedido y reiniciamos ventana
+        queuedTrapJumpForce = Mathf.Max(queuedTrapJumpForce, force);
+        trapJumpTimer = trapJumpGraceWindow;
+        Debug.Log($"[Tiny] Trap jump encolado. Fuerza = {queuedTrapJumpForce}, ventana = {trapJumpTimer:0.00}s");
     }
     #endregion OBSTACLE DETECTION
 
