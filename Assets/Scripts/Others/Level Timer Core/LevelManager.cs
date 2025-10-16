@@ -10,6 +10,8 @@ public class LevelManager : MonoBehaviour
 
     private bool gameEnded = false;
 
+    public bool IsGameOver => gameEnded;
+
     private void Start()
     {
         if (levelTimer != null)
