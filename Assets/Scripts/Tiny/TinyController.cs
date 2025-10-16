@@ -123,6 +123,7 @@ public class TinyController : MonoBehaviour
     private Vector2? retreatTarget = null;
     private float retreatDirX = 0f;          // +1 derecha, -1 izquierda (dirección de RETORNO fija)
     private float retreatFallbackTimer = 0f;  // pequeño tiempo de retroceso si no hay target
+    private TinySpeechBubble tinyBubble;
 
 
     #region CORE
@@ -1633,6 +1634,15 @@ public class TinyController : MonoBehaviour
         {
             hasReachedGoal = true;
             rb.velocity = Vector2.zero;
+            //tinyBubble != null ? tinyBubble.ShowVictoryLine() : = GameObject.FindFirstObjectByType<TinySpeechBubble>();
+            if (tinyBubble == null)
+            {
+                tinyBubble = GameObject.FindFirstObjectByType<TinySpeechBubble>();
+            }
+            if (tinyBubble != null)
+            {
+                tinyBubble.ShowVictoryLine();
+            }
             Debug.Log("¡Tiny llegó a la meta!");
         }
         else if (distanceToGoal <= goalSlowDownDistance)

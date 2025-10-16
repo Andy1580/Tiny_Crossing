@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 public class InteractiveHand : MonoBehaviour
@@ -38,6 +39,7 @@ public class InteractiveHand : MonoBehaviour
     private float currentHoldTimer;
     private bool isHoldingObject;
     private bool isMechanismAwaitingConfirm = false;
+    private TinySpeechBubble tinyBubble;
 
     void Start()
     {
@@ -161,6 +163,14 @@ public class InteractiveHand : MonoBehaviour
                     currentHoldTimer = weaponHoldTime;
                     isHoldingObject = true;
                     interactable.isHoldingByHand = true;
+                    if(tinyBubble == null)
+                    {
+                        tinyBubble = GameObject.FindFirstObjectByType<TinySpeechBubble>();
+                    }
+                    if(tinyBubble != null)
+                    {
+                        tinyBubble.InterruptWithWeapon(interactable.weaponType);
+                    }
                     break;
 
                 case Interactable.InteractableType.Mechanism:
@@ -277,6 +287,8 @@ public class InteractiveHand : MonoBehaviour
 
     public void HandleWeaponHitTiny(Interactable weapon, Vector3 hitPoint)
     {
+        
+
         grabbedObject = null;
         isHoldingObject = false;
 
