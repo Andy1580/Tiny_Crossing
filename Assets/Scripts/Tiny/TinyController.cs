@@ -1643,7 +1643,12 @@ public class TinyController : MonoBehaviour
             {
                 tinyBubble.ShowVictoryLine();
             }
-            Debug.Log("¡Tiny llegó a la meta!");
+            //Debug.Log("¡Tiny llegó a la meta!");
+            LevelManager levelManager = GameObject.FindFirstObjectByType<LevelManager>();
+            if (levelManager != null)
+            {
+                levelManager.TinyWins();
+            }
         }
         else if (distanceToGoal <= goalSlowDownDistance)
         {
