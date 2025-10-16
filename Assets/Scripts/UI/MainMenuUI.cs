@@ -14,18 +14,42 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private Button controlsButton;
     [SerializeField] private Button exitButton;
 
+    [Header("Paneles adicionales")]
+    [SerializeField] private GameObject mainMenuPanel;
+    [SerializeField] private GameObject levelSelectPanel;
+    [SerializeField] private GameObject controlsPanel;
+
+    [Header("Botones de selección de nivel")]
+    [SerializeField] private Button buttonLevel1;
+    [SerializeField] private Button buttonLevel2;
+    [SerializeField] private Button buttonLevel3;
+    [SerializeField] private Button buttonCloseLevelSelect;
+
     [Header("Animación")]
     [SerializeField] private float fadeDuration = 1.2f;
     [SerializeField] private float buttonFadeDuration = 0.5f;
     [SerializeField] private float buttonFadeDelay = 0.2f;
+
+    private bool isLevelSelectOpen = false;
+    private bool isControlsOpen = false;
+
+    [Header("Scene Names")]
+    [SerializeField] private string level1Scene = "Nivel1";
+    [SerializeField] private string level2Scene = "Nivel2";
+    [SerializeField] private string level3Scene = "Nivel3";
 
     private void Start()
     {
         InitializeInvisible();
         AssignButtonActions();
         StartCoroutine(ShowMenuSequence());
+
+        // Asegurar estado inicial
+        ShowMainMenu();
+        if (controlsPanel != null) controlsPanel.SetActive(false);
     }
 
+    // === Inicialización visual ===
     private void InitializeInvisible()
     {
         if (panelGroup != null)
@@ -55,13 +79,19 @@ public class MainMenuUI : MonoBehaviour
     {
         if (playButton != null) playButton.onClick.AddListener(() => LoadScene("Scenes/Nivel1"));
         if (levelSelectButton != null) levelSelectButton.onClick.AddListener(OpenLevelSelect);
-        if (controlsButton != null) controlsButton.onClick.AddListener(OpenControls);
+        if (controlsButton != null) controlsButton.onClick.AddListener(ToggleControlsPanel);
         if (exitButton != null) exitButton.onClick.AddListener(ExitGame);
+
+        if (buttonCloseLevelSelect != null) buttonCloseLevelSelect.onClick.AddListener(CloseLevelSelect);
+
+        if (buttonLevel1 != null) buttonLevel1.onClick.AddListener(() => LoadScene(level1Scene));
+        if (buttonLevel2 != null) buttonLevel2.onClick.AddListener(() => LoadScene(level2Scene));
+        if (buttonLevel3 != null) buttonLevel3.onClick.AddListener(() => LoadScene(level3Scene));
     }
 
+    // === Animación de aparición del menú principal ===
     private IEnumerator ShowMenuSequence()
     {
-        // Fade general del panel
         float t = 0f;
         while (t < fadeDuration)
         {
@@ -72,7 +102,6 @@ public class MainMenuUI : MonoBehaviour
         panelGroup.interactable = true;
         panelGroup.blocksRaycasts = true;
 
-        // Fade del título
         if (titleText != null)
         {
             t = 0f;
@@ -84,7 +113,6 @@ public class MainMenuUI : MonoBehaviour
             }
         }
 
-        // Fade escalonado de botones
         Button[] buttons = { playButton, levelSelectButton, controlsButton, exitButton };
         foreach (var button in buttons)
         {
@@ -115,15 +143,64 @@ public class MainMenuUI : MonoBehaviour
         }
     }
 
+    // === Nueva lógica de paneles ===
+    public void OpenLevelSelect()
+    {
+        SetPanelActive(mainMenuPanel, false);
+        SetPanelActive(levelSelectPanel, true);
+    }
+
+    public void CloseLevelSelect()
+    {
+        SetPanelActive(levelSelectPanel, false);
+        SetPanelActive(mainMenuPanel, true);
+    }
+
+    private void ToggleControlsPanel()
+    {
+        if (controlsPanel == null) return;
+
+        isControlsOpen = !isControlsOpen;
+        controlsPanel.SetActive(isControlsOpen);
+
+        // Cerrar panel de nivel si está abierto
+        if (isLevelSelectOpen && levelSelectPanel != null)
+        {
+            levelSelectPanel.SetActive(false);
+            isLevelSelectOpen = false;
+        }
+    }
+
+    public void ShowMainMenu()
+    {
+        SetPanelActive(mainMenuPanel, true);
+        SetPanelActive(levelSelectPanel, false);
+    }
+
+    private void SetPanelActive(GameObject panel, bool active)
+    {
+        if (!panel) return;
+        panel.SetActive(active);
+
+        var cg = panel.GetComponent<CanvasGroup>();
+        if (cg)
+        {
+            cg.alpha = active ? 1f : 0f;
+            cg.interactable = active;
+            cg.blocksRaycasts = active;
+        }
+    }
+
+    // === Carga de escenas con fade ===
     private void LoadScene(string sceneName)
     {
+        Time.timeScale = 1f;
         StartCoroutine(LoadSceneWithFade(sceneName));
     }
 
     private IEnumerator LoadSceneWithFade(string sceneName)
     {
         panelGroup.interactable = false;
-
         float t = 0f;
         while (t < 1f)
         {
@@ -131,20 +208,7 @@ public class MainMenuUI : MonoBehaviour
             panelGroup.alpha = Mathf.Lerp(1f, 0f, t / 1f);
             yield return null;
         }
-
         SceneManager.LoadScene(sceneName);
-    }
-
-    private void OpenLevelSelect()
-    {
-        Debug.Log("Abrir menú de selección de nivel (pendiente Fase 7.3)");
-        // Aquí luego se puede cambiar a otro panel o escena.
-    }
-
-    private void OpenControls()
-    {
-        Debug.Log("Mostrar ventana de controles (opcional)");
-        // Podrías mostrar un panel temporal o una mini-popup aquí.
     }
 
     private void ExitGame()
