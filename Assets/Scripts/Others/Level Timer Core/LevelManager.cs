@@ -46,6 +46,7 @@ public class LevelManager : MonoBehaviour
 
         if (resultPanel != null)
             resultPanel.Show("You Win!", Color.yellow);
+        Cursor.visible = true;
 
         Debug.Log("¡Jugador gana! El tiempo se agotó.");
     }
@@ -116,6 +117,7 @@ public class LevelManager : MonoBehaviour
 
         if (resultPanel != null)
             resultPanel.Show("Tiny Win!", Color.cyan);
+        Cursor.visible = true;
 
         Debug.Log("¡Tiny gana! Alcanzó la meta antes del tiempo.");
     }

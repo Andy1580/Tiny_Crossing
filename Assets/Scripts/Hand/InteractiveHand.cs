@@ -46,6 +46,7 @@ public class InteractiveHand : MonoBehaviour
         mainCamera = Camera.main;
         transform.position = new Vector3(transform.position.x, transform.position.y, 0);
         mechanismClickTimer = 0f;
+        Cursor.visible = false;
     }
 
     void Update()

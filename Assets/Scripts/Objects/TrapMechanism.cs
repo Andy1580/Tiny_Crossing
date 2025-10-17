@@ -11,6 +11,8 @@ public class TrapMechanism : MonoBehaviour
 
     [Header("Referencias")]
     [SerializeField] private SpriteRenderer mechanismSprite;
+    [SerializeField] private Sprite mechanismSpritePre;
+    [SerializeField] private Sprite mechanismSpriteDefault;
 
     [Header("Colores de estado")]
     [SerializeField] private Color normalColor = Color.white;
@@ -32,6 +34,8 @@ public class TrapMechanism : MonoBehaviour
         if (mechanismSprite == null)
             mechanismSprite = GetComponent<SpriteRenderer>();
         mechanismSprite.color = normalColor;
+
+        mechanismSprite.sprite = mechanismSpriteDefault;
     }
 
     void Update()
@@ -86,6 +90,7 @@ public class TrapMechanism : MonoBehaviour
     {
         isPreActivating = true;
         mechanismSprite.color = previewColor;
+        mechanismSprite.sprite = mechanismSpritePre;
         linkedTrap?.ShowTrapPreview();
         Debug.Log("Mecanismo en modo de selección (preactivación).");
     }

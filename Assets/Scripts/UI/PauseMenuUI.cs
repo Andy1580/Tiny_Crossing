@@ -1,8 +1,7 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class PauseMenuUI : MonoBehaviour
 {
@@ -68,8 +67,16 @@ public class PauseMenuUI : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             Debug.Log("ESC presionado");
-            if (!isPaused) PauseGame();
-            else ResumeGame();
+            if (!isPaused)
+            {
+                PauseGame();
+                Cursor.visible = true;
+            }
+            else
+            {
+                ResumeGame();
+                Cursor.visible = false;
+            }
         }
     }
 
@@ -79,6 +86,7 @@ public class PauseMenuUI : MonoBehaviour
         isPaused = true;
         Time.timeScale = 0f;
         if (pausePanel != null) pausePanel.SetActive(true);
+        Cursor.visible = true;
         StartCoroutine(FadeInPanel());
     }
 
@@ -86,6 +94,7 @@ public class PauseMenuUI : MonoBehaviour
     {
         Debug.Log(" Juego reanudado");
         if (!isPaused) return;
+        Cursor.visible = false;
         StartCoroutine(FadeOutPanel());
     }
 

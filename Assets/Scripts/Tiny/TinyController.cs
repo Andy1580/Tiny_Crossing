@@ -35,7 +35,7 @@ public class TinyController : MonoBehaviour
     [SerializeField] private float gapDetectionDistance = 1.5f;
     [SerializeField] private Vector2 gapCheckSize = new Vector2(0.8f, 0.1f);
     [SerializeField] private LayerMask gapTriggerLayer;
-    private bool shouldJumpGap = false;
+    public bool shouldJumpGap = false;
 
     [Header("Obstacle Detection")]
     [SerializeField] private float obstacleDetectionRange = 1.5f;
@@ -167,6 +167,7 @@ public class TinyController : MonoBehaviour
         // 2) Entorno (se calcula SIEMPRE antes de decidir)
         DetectObstacles();
         DetectGaps();                // <--- MUY IMPORTANTE
+        HandleGapJump();
         CheckPlatformsAndGoal();
 
         // 3) Navegación por Hint (no cortes sin dejar saltar gaps)
@@ -289,7 +290,6 @@ public class TinyController : MonoBehaviour
         }
 
         // 6) Gaps y recolecciones (por si no estás en movingToHint)
-        HandleGapJump();
         CheckPowerUpCollection();
 
         // 7) Visual
@@ -335,10 +335,22 @@ public class TinyController : MonoBehaviour
             gapTriggerLayer
         );
 
-        shouldJumpGap = hit.collider != null && hit.collider.CompareTag("GapTrigger");
+        bool foundGap = hit.collider != null && hit.collider.CompareTag("GapTrigger");
 
-        // Debug visual
-        Debug.DrawRay(origin, direction * gapDetectionDistance, shouldJumpGap ? Color.yellow : Color.white);
+        // Solo actualizamos si hay un gap nuevo
+        if (foundGap && !shouldJumpGap)
+        {
+            shouldJumpGap = true;
+            Debug.Log("Gap detectado: Tiny preparará salto.");
+        }
+
+        Debug.DrawRay(origin, direction * gapDetectionDistance, foundGap ? Color.yellow : Color.white);
+    }
+
+    IEnumerator ResetShouldGap()
+    {
+        yield return new WaitForSeconds(0.6f);
+        shouldJumpGap = false;
     }
 
     private void HandleGapJump()
@@ -347,8 +359,18 @@ public class TinyController : MonoBehaviour
         {
             TryJump();
             shouldJumpGap = false;
-            //Debug.Log("¡Saltando hueco detectado!");
+
+            // Espera breve antes de volver a detectar otro gap
+            StartCoroutine(EnableNextGapDetection());
+            Debug.Log("¡Tiny saltó un gap!");
         }
+    }
+
+    private IEnumerator EnableNextGapDetection()
+    {
+        // Pequeño retardo para evitar doble salto por el mismo gap
+        yield return new WaitForSeconds(0.25f);
+        shouldJumpGap = false; // Reinicia correctamente para detectar el siguiente
     }
 
     void CheckGrounded()
